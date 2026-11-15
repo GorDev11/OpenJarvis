@@ -16,13 +16,20 @@ It uses the model/configuration already tested separately in
 
 ## Install dependencies on Windows
 
-From the OpenJarvis checkout:
+The fork declares \`pocket-tts==4.0.1\` in the Desktop dependency extra
+(on Windows). This is important: the Desktop executable runs \`uv sync\`
+on launch and removes unlisted, manually installed Python packages.
 
-    uv pip install --python ".\.venv\Scripts\python.exe" "pocket-tts==4.0.1"
+After pulling the feature branch, close Desktop and run once from the
+OpenJarvis checkout:
 
-The separate test environment (.venv-pocket) remains independent. Installing
-pocket-tts there does not install it into OpenJarvis's Python environment.
-The backend only loads its large model when audio is first requested.
+    uv lock
+    uv sync --extra desktop --extra inference-cloud --extra inference-google --group desktop-native
+
+Commit the regenerated \`uv.lock\` to the feature branch to keep installs
+reproducible. After this, Desktop's own dependency synchronization should
+retain Pocket-TTS, and the separate .venv-pocket test environment remains
+independent.
 
 ## Select the backend
 
