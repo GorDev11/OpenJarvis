@@ -33,13 +33,19 @@ def test_voice_catalog_and_validation():
         backend.synthesize("Բարև", voice_id="bm_george")
 
 
-def test_synthesize_with_fake_model(tmp_path, monkeypatch):
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_synthesize_with_fake_model(tmp_path, monkeypatch, device):
     np = pytest.importorskip("numpy")
     pytest.importorskip("soundfile")
 
     config = tmp_path / "config_armenian.yaml"
     config.write_text("test: yes\n", encoding="utf-8")
     monkeypatch.setenv("OPENJARVIS_ARMENIAN_TTS_CONFIG", str(config))
+    monkeypatch.setenv("OPENJARVIS_ARMENIAN_TTS_DEVICE", device)
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: device == "cuda")
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
     calls = []
 
@@ -55,6 +61,10 @@ def test_synthesize_with_fake_model(tmp_path, monkeypatch):
 
     class FakeModel:
         sample_rate = 24000
+
+        def to(self, target):
+            calls.append(("to", target))
+            return self
 
         def get_state_for_audio_prompt(self, prompt):
             calls.append(("prompt", prompt))
@@ -85,3 +95,7 @@ def test_synthesize_with_fake_model(tmp_path, monkeypatch):
     assert [c[0] for c in calls].count("load") == 1
     assert [c[0] for c in calls].count("prompt") == 1
     assert [c[0] for c in calls].count("generate") == 2
+    assert backend._device == device
+    assert [c for c in calls if c[0] == "to"] == (
+        [("to", "cuda")] if device == "cuda" else []
+    )
