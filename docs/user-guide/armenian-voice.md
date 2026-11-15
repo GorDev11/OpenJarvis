@@ -154,32 +154,78 @@ guarantee good pronunciation: the run4_60k model and the chosen voice
 reference may still have accent or prosody limitations. Compare the same
 short Armenian phrase before and after enabling the normalizer.
 
-## Progressive read-aloud (experimental)
+## Fast live read-aloud (experimental)
 
-For the `armenian_pocket` backend, the Chat UI now divides long, completed
-assistant replies into WAV-sized speech segments (approximately 120 characters
-each). It begins playing the first segment while the next one is generated.
-This uses the existing `/v1/speech/synthesize` API; other TTS backends keep
-the previous whole-response playback behavior.
+With `voiceOutputEnabled` and `voiceAutoplay` enabled, Armenian Pocket-TTS now
+**starts after the first complete sentence** in the live model response.
+`frontend/src/lib/streaming-speech.ts` commits only sentence boundaries
+(punctuation followed by whitespace), keeping partially emitted words and
+incomplete `<think>` / fenced-code blocks out of the audio queue. Extremely
+long sentences may be divided at a whole-word boundary to avoid indefinite
+silence.
 
-This feature affects the **frontend**, not only the Python API. Pulling the
-feature branch updates the source but does **not** change an already installed
-Tauri desktop executable, which contains a compiled frontend bundle.
+A shared queue fetches the next WAV during the currently playing segment.
+A new user message, model switch, stop, voice setting change, or chat switch
+cancels pending audio. Completed replies cannot autoplay twice. The final
+unfinished sentence is flushed only after the model finishes.
 
-Before rebuilding a Desktop app, run frontend checks:
+This is **sentence-level progressive synthesis**, not raw audio-token
+streaming. It shortens the total wait compared with the earlier
+"read only after the entire answer" implementation, but the first complete
+sentence must still arrive from the LLM and be synthesized by Pocket-TTS.
 
-    cd frontend
-    npm ci
-    npm test
-    npm run build
+## Choose run4 or run5 (without overwriting the original YAML)
 
-A new Desktop build or a frontend development session is required to see the
-progressive read-aloud behavior. Its deployment should be handled separately
-from the validated Python CUDA acceleration. Cancellation and playback order
-should be confirmed with the unit tests and then manually in the UI.
+`run4_60k` remains the default until pronunciation is validated by listening.
+The user-tested `run5_175k` can be selected via an optional process variable.
+The backend derives `~/.openjarvis/tts-configs/run5_175k.yaml` from the
+existing known-working YAML and pins the matching run5 weights/tokenizer to
+Hugging Face revision `b9ea677231407e274bd9d8b0a1404a49b6247ae3`.
+**It never overwrites** `~/OpenJarvis-Armenian-TTS/config_armenian.yaml`.
 
-This is segment-by-segment progressive playback **after the text reply
-finishes**, not token-level realtime streaming of the model response.
+In PowerShell, before starting the backend:
+
+    $env:OPENJARVIS_ARMENIAN_TTS_VARIANT = "run5_175k"
+    uv run --no-sync jarvis serve --port 8000
+
+For the tested original:
+
+    $env:OPENJARVIS_ARMENIAN_TTS_VARIANT = "run4_60k"
+
+A switch requires a complete backend restart, because the model is cached
+after first load. For Desktop launches started outside PowerShell, the
+environment variable must be set for the launching process or saved as a
+Windows user environment variable.
+
+## Shorten exaggerated pauses
+
+The backend shortens *only* long near-silent spans (longer than 480 ms,
+retaining approximately 240 ms of an interior pause). It preserves short
+pauses and waveform sample rate; it does not change the synthesized words.
+Disable this optional post-processing for an A/B comparison by starting
+the backend with:
+
+    $env:OPENJARVIS_ARMENIAN_TTS_TRIM_PAUSES = "0"
+
+Its default is `1` (enabled). It is not a substitute for a model that
+pronounces Armenian incorrectly. The current default speaker prompt remains
+`alba-mackenna/casual.wav`; a native-speaker recording is **not required**.
+
+## Validation and Windows Desktop handoff
+
+1. Run `uv run pytest tests/speech/test_armenian_audio.py
+   tests/speech/test_armenian_training_text.py
+   tests/speech/test_armenian_pronunciation.py
+   tests/speech/test_armenian_pocket_tts.py -q`.
+2. Run `cd frontend; npm ci; npm test; npm run build`.
+3. Test the live reply in the frontend at `http://127.0.0.1:5173` using
+   autoplay: audio should begin after a complete sentence while the LLM
+   continues generating. Stop and switch conversations to test cancellation.
+4. Desktop's installed `.exe` includes its own compiled React bundle: it
+   **does not update** when GitHub code changes. Build a new Tauri installer
+   after tests pass; avoid releasing from the feature branch using the
+   `Desktop Build & Release` workflow, which publishes releases on dispatch.
+   The PR workflow provides an unsigned test installer artifact instead.
 
 ## Limitations
 
