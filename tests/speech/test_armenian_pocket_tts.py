@@ -107,3 +107,57 @@ def test_synthesize_with_fake_model(tmp_path, monkeypatch, device):
     assert [c for c in calls if c[0] == "to"] == (
         [("to", "cuda")] if device == "cuda" else []
     )
+
+
+def test_variant_selection_builds_separate_run5_config(tmp_path, monkeypatch):
+    yaml = pytest.importorskip("yaml")
+    model_yaml = tmp_path / "original.yaml"
+    original = {
+        "weights_path": "run4_original.safetensors",
+        "flow_lm": {
+            "lookup_table": {
+                "tokenizer": "sentencepiece",
+                "tokenizer_path": "run4_original.model",
+            }
+        },
+    }
+    model_yaml.write_text(yaml.safe_dump(original), encoding="utf-8")
+    monkeypatch.setenv("OPENJARVIS_ARMENIAN_TTS_CONFIG", str(model_yaml))
+    monkeypatch.setenv("OPENJARVIS_ARMENIAN_TTS_VARIANT", "run5_175k")
+    monkeypatch.setattr(
+        "openjarvis.speech.armenian_pocket_tts.Path.home",
+        lambda: tmp_path,
+    )
+
+    calls = []
+
+    def fake_download(*, repo_id, filename, revision):
+        calls.append(filename)
+        return str(tmp_path / filename)
+
+    hub = types.ModuleType("huggingface_hub")
+    hub.hf_hub_download = fake_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    backend = ArmenianPocketTTSBackend()
+    derived = backend._model_config_for_variant()
+    assert derived.exists()
+    assert derived != model_yaml
+    assert yaml.safe_load(model_yaml.read_text(encoding="utf-8")) == original
+    cfg = yaml.safe_load(derived.read_text(encoding="utf-8"))
+    assert cfg["weights_path"].endswith("run5_175k/model.safetensors")
+    assert cfg["flow_lm"]["lookup_table"]["tokenizer_path"].endswith(
+        "run5_175k/tokenizer_hy5.model"
+    )
+    assert calls == [
+        "run5_175k/model.safetensors",
+        "run5_175k/tokenizer_hy5.model",
+    ]
+
+
+def test_unknown_variant_is_rejected(tmp_path, monkeypatch):
+    config = tmp_path / "config.yaml"
+    config.write_text("test: true\n", encoding="utf-8")
+    monkeypatch.setenv("OPENJARVIS_ARMENIAN_TTS_CONFIG", str(config))
+    monkeypatch.setenv("OPENJARVIS_ARMENIAN_TTS_VARIANT", "unknown")
+    with pytest.raises(ValueError, match="VARIANT"):
+        ArmenianPocketTTSBackend()._model_config_for_variant()
