@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Square, Paperclip, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
+import { useTtsStore } from '../../lib/tts';
 import { streamChat, streamResearch } from '../../lib/sse';
 import { fetchSavings, getBase } from '../../lib/api';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
@@ -117,6 +118,9 @@ export function InputArea() {
   useEffect(() => {
     if (prevModelRef.current !== selectedModel && streamState.isStreaming) {
       abortRef.current?.abort();
+      const current = useAppStore.getState().messages.at(-1);
+      if (current?.role === 'assistant') useTtsStore.getState().markAutoSpoken(current.id);
+      useTtsStore.getState().stop();
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -163,6 +167,9 @@ export function InputArea() {
   }, [input]);
 
   const stopStreaming = useCallback(() => {
+    const last = useAppStore.getState().messages.at(-1);
+    if (last?.role === 'assistant') useTtsStore.getState().markAutoSpoken(last.id);
+    useTtsStore.getState().stop();
     abortRef.current?.abort();
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -179,6 +186,8 @@ export function InputArea() {
       return;
     }
 
+    // A new user request always interrupts any remaining assistant audio.
+    useTtsStore.getState().stop();
     setInput('');
 
     let convId = activeId;
