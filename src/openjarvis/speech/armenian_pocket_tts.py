@@ -8,6 +8,7 @@ The model loads lazily on first speech synthesis, and is then reused.
 from __future__ import annotations
 
 import importlib.util
+import copy
 import io
 import os
 import threading
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Any, List
 
 from openjarvis.core.registry import TTSRegistry
+from openjarvis.speech.armenian_audio import shorten_long_pauses
 from openjarvis.speech.armenian_pronunciation import normalize_armenian_speech
 from openjarvis.speech.armenian_training_text import normalize_for_pocket_training
 from openjarvis.speech.tts import TTSBackend, TTSResult
@@ -37,6 +39,12 @@ class ArmenianPocketTTSBackend(TTSBackend):
         self._voice_prompt = os.environ.get(
             "OPENJARVIS_ARMENIAN_TTS_VOICE_PROMPT", _DEFAULT_PROMPT
         )
+        self._variant = os.environ.get(
+            "OPENJARVIS_ARMENIAN_TTS_VARIANT", "run4_60k"
+        ).strip().lower()
+        self._trim_pauses = os.environ.get(
+            "OPENJARVIS_ARMENIAN_TTS_TRIM_PAUSES", "1"
+        ).strip().lower() not in {"0", "false", "off", "no"}
         self._model: Any | None = None
         self._voice: Any | None = None
         self._lock = threading.RLock()
@@ -52,6 +60,44 @@ class ArmenianPocketTTSBackend(TTSBackend):
         return self._config_path.is_file() and (
             importlib.util.find_spec("pocket_tts") is not None
         )
+
+    def _model_config_for_variant(self) -> Path:
+        """Preserve the working YAML; use a cached derived config for run5."""
+        if self._variant == "run4_60k":
+            return self._config_path
+        if self._variant != "run5_175k":
+            raise ValueError(
+                "OPENJARVIS_ARMENIAN_TTS_VARIANT must be run4_60k or run5_175k"
+            )
+        import yaml
+        from huggingface_hub import hf_hub_download
+
+        revision = "b9ea677231407e274bd9d8b0a1404a49b6247ae3"
+        weights = hf_hub_download(
+            repo_id="mnjoyan/pocket-tts-armenian",
+            filename="run5_175k/model.safetensors",
+            revision=revision,
+        )
+        tokenizer = hf_hub_download(
+            repo_id="mnjoyan/pocket-tts-armenian",
+            filename="run5_175k/tokenizer_hy5.model",
+            revision=revision,
+        )
+        with self._config_path.open("r", encoding="utf-8") as source:
+            config = copy.deepcopy(yaml.safe_load(source))
+        config["weights_path"] = str(weights)
+        config["flow_lm"]["lookup_table"]["tokenizer"] = "sentencepiece"
+        config["flow_lm"]["lookup_table"]["tokenizer_path"] = str(tokenizer)
+        config.pop("weights_path_without_voice_cloning", None)
+
+        dest = Path.home() / ".openjarvis" / "tts-configs" / "run5_175k.yaml"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        # The original, known-working run4 config is never overwritten.
+        dest.write_text(
+            yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        return dest
 
     def _ensure_loaded(self) -> None:
         if self._model is not None:
@@ -86,7 +132,7 @@ class ArmenianPocketTTSBackend(TTSBackend):
             )
 
         device = "cuda" if (requested != "cpu" and cuda_available) else "cpu"
-        model = TTSModel.load_model(config=str(self._config_path))
+        model = TTSModel.load_model(config=str(self._model_config_for_variant()))
         if device == "cuda":
             try:
                 # Move before creating the voice state, as in the successful benchmark.
@@ -138,6 +184,8 @@ class ArmenianPocketTTSBackend(TTSBackend):
             audio = self._model.generate_audio(self._voice, speakable_text)
             samples = audio.detach().cpu().numpy()
             sample_rate = int(self._model.sample_rate)
+            if self._trim_pauses:
+                samples = shorten_long_pauses(samples, sample_rate)
 
             output = io.BytesIO()
             sf.write(output, samples, sample_rate, format="WAV", subtype="PCM_16")
@@ -149,7 +197,7 @@ class ArmenianPocketTTSBackend(TTSBackend):
             duration_seconds=duration,
             voice_id=_VOICE_ID,
             sample_rate=sample_rate,
-            metadata={"backend": self.backend_id, "language": "hy", "device": self._device},
+            metadata={"backend": self.backend_id, "language": "hy", "device": self._device, "variant": self._variant},
         )
 
     def available_voices(self) -> List[str]:
