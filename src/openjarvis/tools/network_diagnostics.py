@@ -56,7 +56,8 @@ $profiles = @(
 )
 $dnsResult = "Unavailable"
 try {
-  $resolved = Resolve-DnsName -Name "example.com" -Type A -QuickTimeout -ErrorAction Stop
+  $resolved = Resolve-DnsName -Name "example.com" -Type A `
+    -QuickTimeout -ErrorAction Stop
   if (@($resolved | Where-Object { $_.IPAddress }).Count -gt 0) {
     $dnsResult = "OK"
   } else {
@@ -84,7 +85,11 @@ try {
   observed_neighbors = $neighbors
   dns_resolution = $dnsResult
   internet_tcp_443 = $tcpResult
-  note = "Observed neighbors are cached local devices, NOT a complete list of router clients. LinkSpeed is not internet throughput. No settings were changed."
+  note = (
+    "Observed neighbors are cached local devices, not a complete " +
+    "router client list. LinkSpeed is not measured internet speed. " +
+    "No settings were changed."
+  )
 } | ConvertTo-Json -Depth 8 -Compress
 """
 
