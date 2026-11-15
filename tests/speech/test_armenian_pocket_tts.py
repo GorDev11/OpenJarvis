@@ -7,12 +7,15 @@ import types
 
 import pytest
 
-from openjarvis.core.registry import TTSRegistry
+from openjarvis.speech.tts import TTSBackend
 from openjarvis.speech.armenian_pocket_tts import ArmenianPocketTTSBackend
 
 
-def test_registered():
-    assert TTSRegistry.contains("armenian_pocket")
+def test_backend_identifier_and_interface():
+    # Other tests may clear the process-global registry; test the backend
+    # contract without depending on unrelated test order.
+    assert ArmenianPocketTTSBackend.backend_id == "armenian_pocket"
+    assert issubclass(ArmenianPocketTTSBackend, TTSBackend)
 
 
 def test_health_is_false_without_config(tmp_path, monkeypatch):
