@@ -30,9 +30,10 @@ explicitly (and fail if CUDA is unavailable). The default is `auto`.
 
 For the RTX 3060 test system, a short Armenian utterance took about
 1.10–1.16 seconds with the CUDA wheel, compared with 7–9 seconds on CPU.
-Long replies still require more processing: the current OpenJarvis API and
-frontend wait for the complete WAV audio before playback. Streaming playback
-is a separate future improvement.
+Long replies still require more processing. The experimental Chat frontend
+can play short speech segments successively after a text reply finishes,
+while the existing speech API returns complete WAV files for each request.
+Token-by-token live speech remains a separate improvement.
 
 After pulling the feature branch, close Desktop and run once from the
 OpenJarvis checkout:
