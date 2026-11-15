@@ -95,12 +95,26 @@ export function ChatArea() {
     streamState.content, voiceOutputEnabled, voiceAutoplay, voiceBackend, voiceAvailable,
   ]);
 
-  // Make sure a navigated-away chat cannot keep reading into another screen.
-  useEffect(() => () => {
-    const live = liveVoiceRef.current;
-    if (live && useTtsStore.getState().speakingId === live.messageId) {
+  // Switching conversations must also stop a finished reply's read-aloud,
+  // not just the partially generated one.
+  const previousActiveId = useRef(activeId);
+  useEffect(() => {
+    if (previousActiveId.current !== activeId) {
+      const tts = useTtsStore.getState();
+      if (tts.speakingId) tts.stop();
+    }
+    previousActiveId.current = activeId;
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!voiceOutputEnabled && useTtsStore.getState().speakingId) {
       useTtsStore.getState().stop();
     }
+  }, [voiceOutputEnabled]);
+
+  // No audio session should survive leaving the chat screen.
+  useEffect(() => () => {
+    if (useTtsStore.getState().speakingId) useTtsStore.getState().stop();
   }, []);
 
   // Speak on the falling edge of a stream -- the moment a reply finishes -- and
