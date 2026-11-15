@@ -38,6 +38,12 @@ class ArmenianPocketTTSBackend(TTSBackend):
         self._model: Any | None = None
         self._voice: Any | None = None
         self._lock = threading.RLock()
+        # Auto-select CUDA when a GPU-enabled PyTorch build is installed.
+        # Override with OPENJARVIS_ARMENIAN_TTS_DEVICE=cpu to save VRAM.
+        self._device_preference = os.environ.get(
+            "OPENJARVIS_ARMENIAN_TTS_DEVICE", "auto"
+        ).strip().lower()
+        self._device = "cpu"
 
     def health(self) -> bool:
         """Check dependencies and configuration without loading the model."""
@@ -60,9 +66,43 @@ class ArmenianPocketTTSBackend(TTSBackend):
                 "Armenian voice requires pocket-tts in OpenJarvis's environment"
             ) from exc
 
+        requested = self._device_preference
+        if requested not in {"auto", "cuda", "cpu"}:
+            raise ValueError(
+                "OPENJARVIS_ARMENIAN_TTS_DEVICE must be auto, cuda, or cpu"
+            )
+        try:
+            import torch
+        except ImportError:
+            cuda_available = False
+        else:
+            cuda_available = bool(torch.cuda.is_available())
+
+        if requested == "cuda" and not cuda_available:
+            raise RuntimeError(
+                "CUDA requested for Armenian TTS, but PyTorch CUDA is unavailable"
+            )
+
+        device = "cuda" if (requested != "cpu" and cuda_available) else "cpu"
         model = TTSModel.load_model(config=str(self._config_path))
+        if device == "cuda":
+            try:
+                # Move before creating the voice state, as in the successful benchmark.
+                model = model.to("cuda")
+            except (RuntimeError, OSError) as exc:
+                if requested == "cuda":
+                    raise
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Armenian Pocket-TTS GPU unavailable (%s); falling back to CPU", exc
+                )
+                model = model.to("cpu")
+                device = "cpu"
+
         voice = model.get_state_for_audio_prompt(self._voice_prompt)
         self._model, self._voice = model, voice
+        self._device = device
 
     def synthesize(
         self,
@@ -101,7 +141,7 @@ class ArmenianPocketTTSBackend(TTSBackend):
             duration_seconds=duration,
             voice_id=_VOICE_ID,
             sample_rate=sample_rate,
-            metadata={"backend": self.backend_id, "language": "hy"},
+            metadata={"backend": self.backend_id, "language": "hy", "device": self._device},
         )
 
     def available_voices(self) -> List[str]:
