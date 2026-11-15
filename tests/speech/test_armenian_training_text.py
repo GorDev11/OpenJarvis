@@ -33,8 +33,7 @@ def test_pinned_files_are_downloaded_together_and_loaded(tmp_path, monkeypatch):
     configs = tmp_path / "configs"
     configs.mkdir()
     (configs / "hy_itn.py").write_text(
-        "def digits_to_words(s):\n"
-        "    return s.replace('123', 'հարյուր քսաներեք')\n",
+        "def digits_to_words(s):\n    return s.replace('123', 'հարյուր քսաներեք')\n",
         encoding="utf-8",
     )
     (configs / "hy_text.py").write_text(
@@ -59,9 +58,7 @@ def test_pinned_files_are_downloaded_together_and_loaded(tmp_path, monkeypatch):
     training._load_training_normaliser.cache_clear()
     try:
         normalise = training._load_training_normaliser()
-        assert normalise("Գինը 123 դրամ է։") == (
-            "Գինը հարյուր քսաներեք դրամ է."
-        )
+        assert normalise("Գինը 123 դրամ է։") == ("Գինը հարյուր քսաներեք դրամ է.")
         assert [c[1] for c in calls] == [
             "configs/hy_itn.py",
             "configs/hy_text.py",
