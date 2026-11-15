@@ -157,7 +157,10 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
         // message must not leave an unhandled rejected promise.
         const next = index + 1 < segments.length
           ? synthesizeSpeech(segments[index + 1], { signal: ac.signal })
-              .then<LoadedChunk>((blob) => ({ blob }), (error) => ({ error }))
+              .then<LoadedChunk, LoadedChunk>(
+                (blob) => ({ blob }),
+                (error) => ({ error }),
+              )
           : undefined;
 
         el.onended = () => {
