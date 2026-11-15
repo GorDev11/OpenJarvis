@@ -7,8 +7,8 @@ import types
 
 import pytest
 
-from openjarvis.speech.tts import TTSBackend
 from openjarvis.speech.armenian_pocket_tts import ArmenianPocketTTSBackend
+from openjarvis.speech.tts import TTSBackend
 
 
 def test_backend_identifier_and_interface():
