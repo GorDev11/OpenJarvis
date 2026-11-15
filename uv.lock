@@ -5302,6 +5302,7 @@ desktop = [
     { name = "faster-whisper" },
     { name = "numpy" },
     { name = "onnxruntime", version = "1.23.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (platform_machine == 'x86_64' and sys_platform == 'darwin')" },
+    { name = "pocket-tts", marker = "sys_platform == 'win32'" },
     { name = "pydantic" },
     { name = "python-multipart" },
     { name = "sounddevice" },
@@ -5517,6 +5518,7 @@ requires-dist = [
     { name = "pdfplumber", marker = "extra == 'memory-pdf'", specifier = ">=0.10" },
     { name = "pdfplumber", marker = "extra == 'pdf'", specifier = ">=0.10" },
     { name = "playwright", marker = "extra == 'browser'", specifier = ">=1.40" },
+    { name = "pocket-tts", marker = "sys_platform == 'win32' and extra == 'desktop'", specifier = "==4.0.1" },
     { name = "polars", marker = "extra == 'framework-comparison'", specifier = ">=1.0" },
     { name = "posthog", specifier = ">=3.0" },
     { name = "praw", marker = "extra == 'channel-reddit'", specifier = ">=7.0" },
@@ -6173,6 +6175,34 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
+name = "pocket-tts"
+version = "4.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "einops" },
+    { name = "fastapi" },
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "pydantic" },
+    { name = "python-multipart" },
+    { name = "requests", version = "2.32.5", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 's390x'" },
+    { name = "requests", version = "2.34.2", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 's390x'" },
+    { name = "safetensors" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "sentencepiece" },
+    { name = "tokenizers" },
+    { name = "torch" },
+    { name = "typer" },
+    { name = "typing-extensions" },
+    { name = "uvicorn" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/03/a5/e787a6b68ad100c1f33539e3f9108b32a08d65d94d18996927a3562cdd38/pocket_tts-4.0.1.tar.gz", hash = "sha256:bf3eb338bc5f80793afcff438cbbde33c62b8d1d43f7188a74df8b64c620a6fd", size = 912980, upload-time = "2026-10-21T13:15:19.116Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/33/e95df6d67fac720836b8240cb2512a253c0e64da85b9c485df31aad0ce71/pocket_tts-4.0.1-py3-none-any.whl", hash = "sha256:a6baf5fd9195399a632d7ef1cb75d4ee772b8d3534c85b90164b39c687a69961", size = 100708, upload-time = "2026-10-21T13:15:17.127Z" },
 ]
 
 [[package]]
