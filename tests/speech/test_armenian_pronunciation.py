@@ -39,8 +39,7 @@ def test_unknown_latin_tokens_spelled_as_letters_only_with_armenian():
 
 def test_urls_emails_and_versions_are_not_modified():
     text = (
-        "Տե՛ս https://example.org/AI կամ me@openjarvis.dev, "
-        "ինչպես նաև v1.2 տարբերակը։"
+        "Տե՛ս https://example.org/AI կամ me@openjarvis.dev, ինչպես նաև v1.2 տարբերակը։"
     )
     assert normalize_armenian_speech(text) == text
 
