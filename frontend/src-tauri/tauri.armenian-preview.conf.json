@@ -1,0 +1,12 @@
+{
+  "productName": "OpenJarvis Armenian Preview",
+  "identifier": "com.openjarvis.desktop.armenianpreview",
+  "bundle": {
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "active": false
+    }
+  }
+}
