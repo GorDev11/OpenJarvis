@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, List
 
 from openjarvis.core.registry import TTSRegistry
+from openjarvis.speech.armenian_pronunciation import normalize_armenian_speech
 from openjarvis.speech.tts import TTSBackend, TTSResult
 
 _DEFAULT_PROMPT = "hf://kyutai/tts-voices/alba-mackenna/casual.wav"
@@ -127,7 +128,9 @@ class ArmenianPocketTTSBackend(TTSBackend):
 
         with self._lock:
             self._ensure_loaded()
-            audio = self._model.generate_audio(self._voice, text)
+            # Only speech input is normalized; displayed chat messages stay original.
+            speakable_text = normalize_armenian_speech(text)
+            audio = self._model.generate_audio(self._voice, speakable_text)
             samples = audio.detach().cpu().numpy()
             sample_rate = int(self._model.sample_rate)
 
