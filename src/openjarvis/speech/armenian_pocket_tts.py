@@ -41,9 +41,11 @@ class ArmenianPocketTTSBackend(TTSBackend):
         self._voice_prompt = os.environ.get(
             "OPENJARVIS_ARMENIAN_TTS_VOICE_PROMPT", _DEFAULT_PROMPT
         )
-        self._variant = os.environ.get(
-            "OPENJARVIS_ARMENIAN_TTS_VARIANT", "run4_60k"
-        ).strip().lower()
+        self._variant = (
+            os.environ.get("OPENJARVIS_ARMENIAN_TTS_VARIANT", "run4_60k")
+            .strip()
+            .lower()
+        )
         self._trim_pauses = os.environ.get(
             "OPENJARVIS_ARMENIAN_TTS_TRIM_PAUSES", "1"
         ).strip().lower() not in {"0", "false", "off", "no"}
@@ -52,9 +54,9 @@ class ArmenianPocketTTSBackend(TTSBackend):
         self._lock = threading.RLock()
         # Auto-select CUDA when a GPU-enabled PyTorch build is installed.
         # Override with OPENJARVIS_ARMENIAN_TTS_DEVICE=cpu to save VRAM.
-        self._device_preference = os.environ.get(
-            "OPENJARVIS_ARMENIAN_TTS_DEVICE", "auto"
-        ).strip().lower()
+        self._device_preference = (
+            os.environ.get("OPENJARVIS_ARMENIAN_TTS_DEVICE", "auto").strip().lower()
+        )
         self._device = "cpu"
 
     def health(self) -> bool:
@@ -106,8 +108,7 @@ class ArmenianPocketTTSBackend(TTSBackend):
             return
         if not self._config_path.is_file():
             raise RuntimeError(
-                "Armenian Pocket-TTS config not found: "
-                f"{self._config_path}"
+                f"Armenian Pocket-TTS config not found: {self._config_path}"
             )
         try:
             from pocket_tts import TTSModel
@@ -165,9 +166,7 @@ class ArmenianPocketTTSBackend(TTSBackend):
         if not text.strip():
             raise ValueError("Text cannot be empty")
         if voice_id not in ("", _VOICE_ID):
-            raise ValueError(
-                f"Unsupported Armenian Pocket-TTS voice ID: {voice_id!r}"
-            )
+            raise ValueError(f"Unsupported Armenian Pocket-TTS voice ID: {voice_id!r}")
         if speed != 1.0:
             raise ValueError("Armenian Pocket-TTS currently supports speed=1.0 only")
         if output_format.lower() != "wav":
