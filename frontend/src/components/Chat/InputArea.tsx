@@ -118,7 +118,8 @@ export function InputArea() {
   useEffect(() => {
     if (prevModelRef.current !== selectedModel && streamState.isStreaming) {
       abortRef.current?.abort();
-      const current = useAppStore.getState().messages.at(-1);
+      const allMessages = useAppStore.getState().messages;
+      const current = allMessages[allMessages.length - 1];
       if (current?.role === 'assistant') useTtsStore.getState().markAutoSpoken(current.id);
       useTtsStore.getState().stop();
       if (timerRef.current) {
@@ -167,7 +168,8 @@ export function InputArea() {
   }, [input]);
 
   const stopStreaming = useCallback(() => {
-    const last = useAppStore.getState().messages.at(-1);
+    const allMessages = useAppStore.getState().messages;
+    const last = allMessages[allMessages.length - 1];
     if (last?.role === 'assistant') useTtsStore.getState().markAutoSpoken(last.id);
     useTtsStore.getState().stop();
     abortRef.current?.abort();
