@@ -42,6 +42,11 @@ def test_synthesize_with_fake_model(tmp_path, monkeypatch, device):
     config.write_text("test: yes\n", encoding="utf-8")
     monkeypatch.setenv("OPENJARVIS_ARMENIAN_TTS_CONFIG", str(config))
     monkeypatch.setenv("OPENJARVIS_ARMENIAN_TTS_DEVICE", device)
+    # Network-free model mock; training text rules are verified separately.
+    monkeypatch.setattr(
+        "openjarvis.speech.armenian_pocket_tts.normalize_for_pocket_training",
+        lambda text: text.replace("Ասա", "Արտասանիր"),
+    )
 
     fake_torch = types.ModuleType("torch")
     fake_torch.cuda = types.SimpleNamespace(is_available=lambda: device == "cuda")
@@ -97,7 +102,7 @@ def test_synthesize_with_fake_model(tmp_path, monkeypatch, device):
     assert [c[0] for c in calls].count("prompt") == 1
     assert mixed.audio.startswith(b"RIFF")
     assert [c[0] for c in calls].count("generate") == 3
-    assert ("generate", "voice", "Ասա Չաթ Ջի Փի Թի կամ Ջեմինի և Էյ Այ։") in calls
+    assert ("generate", "voice", "Արտասանիր Չաթ Ջի Փի Թի կամ Ջեմինի և Էյ Այ։") in calls
     assert backend._device == device
     assert [c for c in calls if c[0] == "to"] == (
         [("to", "cuda")] if device == "cuda" else []
