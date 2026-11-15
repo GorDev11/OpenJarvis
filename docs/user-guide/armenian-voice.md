@@ -221,7 +221,16 @@ pronounces Armenian incorrectly. The current default speaker prompt remains
 3. Test the live reply in the frontend at `http://127.0.0.1:5173` using
    autoplay: audio should begin after a complete sentence while the LLM
    continues generating. Stop and switch conversations to test cancellation.
-4. Desktop's installed `.exe` includes its own compiled React bundle: it
+4. On Windows 11, run the consolidated preview script from the repo root:
+
+       powershell -ExecutionPolicy Bypass -File .\\scripts\\build-armenian-desktop.ps1
+
+   This syncs required Python dependencies, runs voice + frontend tests,
+   checks CUDA, and builds an **isolated NSIS Armenian Preview installer**.
+   The preview uses a distinct Tauri identifier and disables its updater,
+   so it will not replace the installed stable OpenJarvis app. If Rust or
+   another required tool is missing, the script stops with a clear error.
+5. Desktop's installed `.exe` includes its own compiled React bundle: it
    **does not update** when GitHub code changes. Build a new Tauri installer
    after tests pass; avoid releasing from the feature branch using the
    `Desktop Build & Release` workflow, which publishes releases on dispatch.
