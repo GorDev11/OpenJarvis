@@ -69,9 +69,12 @@ def normalize_for_pocket_training(text: str) -> str:
     Set OPENJARVIS_ARMENIAN_TTS_TRAINING_NORMALIZE=0 for an emergency
     comparison or rollback without removing the working backend.
     """
-    if os.environ.get(
-        "OPENJARVIS_ARMENIAN_TTS_TRAINING_NORMALIZE", "1"
-    ).strip().lower() in _DISABLE_VALUE:
+    if (
+        os.environ.get("OPENJARVIS_ARMENIAN_TTS_TRAINING_NORMALIZE", "1")
+        .strip()
+        .lower()
+        in _DISABLE_VALUE
+    ):
         return text
     if not text.strip():
         return text
