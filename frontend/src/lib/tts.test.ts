@@ -7,6 +7,7 @@ vi.mock('./api', () => ({
 
 import { synthesizeSpeech, fetchTtsHealth } from './api';
 import { useTtsStore, __resetTtsForTests, shouldAutoplayFinishedReply } from './tts';
+import { splitSpeechText } from './speech-chunks';
 
 const synth = vi.mocked(synthesizeSpeech);
 const health = vi.mocked(fetchTtsHealth);
@@ -109,7 +110,11 @@ describe('shared voice output', () => {
     const first = deferred<Blob>();
     const second = deferred<Blob>();
     synth.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-    const text = Array(45).fill('Բարև, ես Ջարվիսն եմ։').join(' ');
+    // Exactly two chunks: the mock only prepares two audio responses.
+    // Using a much longer reply accidentally triggered a third mock call
+    // with no return value, preventing the second audio.play() from running.
+    const text = Array(8).fill('Բարև, ես Ջարվիսն եմ։').join(' ');
+    expect(splitSpeechText(text)).toHaveLength(2);
 
     const playing = useTtsStore.getState().speak('m1', text);
     expect(synth).toHaveBeenCalledTimes(1);
@@ -130,6 +135,10 @@ describe('shared voice output', () => {
       expect(FakeAudio.instances[1].playCalls).toBe(1);
     });
     expect(useTtsStore.getState().speakingId).toBe('m1');
+
+    FakeAudio.instances[1].onended?.();
+    expect(useTtsStore.getState().state).toBe('idle');
+    expect(useTtsStore.getState().error).toBeNull();
   });
 
   it('stopping during a prefetched segment prevents further playback', async () => {
