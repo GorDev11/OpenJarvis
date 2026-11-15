@@ -34,9 +34,7 @@ def test_windows_queries_are_fixed_and_data_is_parsed(monkeypatch):
         capture["command"] = command
         capture["kwargs"] = kwargs
         payload = {"dns_resolution": "OK", "observed_neighbors": []}
-        return SimpleNamespace(
-            returncode=0, stdout=json.dumps(payload), stderr=""
-        )
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
 
     monkeypatch.setattr(diag.subprocess, "run", fake_run)
     result = diag.NetworkDiagnosticsTool().execute()
