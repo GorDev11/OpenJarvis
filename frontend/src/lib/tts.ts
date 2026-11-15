@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { synthesizeSpeech, fetchTtsHealth } from './api';
 import { toSpeakableText } from './message-text';
+import { splitSpeechText } from './speech-chunks';
 
 export type TtsState = 'idle' | 'loading' | 'speaking';
 
@@ -20,6 +21,8 @@ interface TtsStore {
   errorId: string | null;
   /** null until the health probe has answered. */
   available: boolean | null;
+  /** Active backend name; progressive playback is enabled for Armenian TTS only. */
+  backend: string | null;
   /** Last message spoken by autoplay, so a re-render never repeats it. */
   autoSpokenId: string | null;
   speak: (id: string, text: string) => Promise<void>;
@@ -35,6 +38,8 @@ let objectUrl: string | null = null;
 let controller: AbortController | null = null;
 let token = 0;
 let healthProbe: Promise<void> | null = null;
+
+type LoadedChunk = { blob: Blob } | { error: unknown };
 
 /** Only a stream ending in the active conversation may trigger autoplay. */
 export function shouldAutoplayFinishedReply(
@@ -52,7 +57,7 @@ export function shouldAutoplayFinishedReply(
     && lastMessage.id !== autoSpokenId;
 }
 
-function teardown(): void {
+function releaseAudio(): void {
   if (audio) {
     // Detach first: clearing src re-runs the media load algorithm, which fails
     // on an empty source and dispatches an `error` event. With the handler
@@ -68,6 +73,10 @@ function teardown(): void {
     URL.revokeObjectURL(objectUrl);
     objectUrl = null;
   }
+}
+
+function teardown(): void {
+  releaseAudio();
   if (controller) {
     controller.abort();
     controller = null;
@@ -80,17 +89,18 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
   error: null,
   errorId: null,
   available: null,
+  backend: null,
   autoSpokenId: null,
 
   ensureHealth: () => {
     if (healthProbe) return healthProbe;
     healthProbe = fetchTtsHealth()
       .then((health) => {
-        set({ available: health.available });
+        set({ available: health.available, backend: health.available ? (health.backend ?? null) : null });
         if (!health.available) healthProbe = null;
       })
       .catch(() => {
-        set({ available: false });
+        set({ available: false, backend: null });
         healthProbe = null;
       });
     return healthProbe;
@@ -102,8 +112,13 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
     const trimmed = toSpeakableText(text);
     if (!trimmed) return;
 
-    // Bump before teardown so a synthesis still in flight is both aborted and
-    // fenced off by the token, even if the abort loses the race.
+    // The original whole-WAV flow is retained for every other TTS backend.
+    // Armenian speech plays short WAV segments in order; the next segment
+    // is synthesized during the current segment's playback.
+    const segments = get().backend === 'armenian_pocket'
+      ? splitSpeechText(trimmed)
+      : [trimmed];
+
     token += 1;
     const mine = token;
     teardown();
@@ -112,29 +127,7 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
     const ac = new AbortController();
     controller = ac;
 
-    try {
-      const blob = await synthesizeSpeech(trimmed, { signal: ac.signal });
-      if (mine !== token) return;
-
-      const url = URL.createObjectURL(blob);
-      objectUrl = url;
-      const el = new Audio(url);
-      audio = el;
-
-      el.onended = () => {
-        if (mine !== token) return;
-        teardown();
-        set({ state: 'idle', speakingId: null });
-      };
-      el.onerror = () => {
-        if (mine !== token) return;
-        teardown();
-        set({ state: 'idle', speakingId: null, error: 'Playback failed', errorId: id });
-      };
-
-      await el.play();
-      if (mine === token) set({ state: 'speaking', speakingId: id });
-    } catch (err) {
+    const fail = (err: unknown) => {
       if (mine !== token) return;
       if (err instanceof DOMException && err.name === 'AbortError') return;
       teardown();
@@ -144,7 +137,50 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
         error: err instanceof Error ? err.message : 'Speech synthesis failed',
         errorId: id,
       });
-    }
+    };
+
+    const playSegment = async (index: number, prefetched?: Promise<LoadedChunk>): Promise<void> => {
+      try {
+        const result: LoadedChunk = prefetched
+          ? await prefetched
+          : { blob: await synthesizeSpeech(segments[index], { signal: ac.signal }) };
+        if (mine !== token) return;
+        if ('error' in result) throw result.error;
+
+        releaseAudio();
+        const url = URL.createObjectURL(result.blob);
+        objectUrl = url;
+        const el = new Audio(url);
+        audio = el;
+
+        // Catch prefetch errors in a settled result: stopping or changing a
+        // message must not leave an unhandled rejected promise.
+        const next = index + 1 < segments.length
+          ? synthesizeSpeech(segments[index + 1], { signal: ac.signal })
+              .then<LoadedChunk>((blob) => ({ blob }), (error) => ({ error }))
+          : undefined;
+
+        el.onended = () => {
+          if (mine !== token) return;
+          if (index + 1 === segments.length) {
+            teardown();
+            set({ state: 'idle', speakingId: null });
+          } else {
+            releaseAudio();
+            set({ state: 'loading', speakingId: id });
+            void playSegment(index + 1, next);
+          }
+        };
+        el.onerror = () => fail(new Error('Playback failed'));
+
+        await el.play();
+        if (mine === token) set({ state: 'speaking', speakingId: id });
+      } catch (err) {
+        fail(err);
+      }
+    };
+
+    await playSegment(0);
   },
 
   stop: () => {
@@ -165,6 +201,7 @@ export function __resetTtsForTests(): void {
     error: null,
     errorId: null,
     available: null,
+    backend: null,
     autoSpokenId: null,
   });
 }
