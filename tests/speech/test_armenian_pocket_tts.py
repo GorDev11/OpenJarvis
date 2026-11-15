@@ -16,9 +16,7 @@ def test_registered():
 
 
 def test_health_is_false_without_config(tmp_path, monkeypatch):
-    monkeypatch.setenv(
-        "OPENJARVIS_ARMENIAN_TTS_CONFIG", str(tmp_path / "absent.yaml")
-    )
+    monkeypatch.setenv("OPENJARVIS_ARMENIAN_TTS_CONFIG", str(tmp_path / "absent.yaml"))
     assert ArmenianPocketTTSBackend().health() is False
 
 
