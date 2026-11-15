@@ -124,8 +124,11 @@ describe('shared voice output', () => {
     await Promise.resolve();
     FakeAudio.instances[0].onended?.();
 
-    await vi.waitFor(() => expect(FakeAudio.instances).toHaveLength(2));
-    expect(FakeAudio.instances[1].playCalls).toBe(1);
+    await vi.waitFor(() => {
+      expect(FakeAudio.instances).toHaveLength(2);
+      // The audio element may be constructed before its async play() begins.
+      expect(FakeAudio.instances[1].playCalls).toBe(1);
+    });
     expect(useTtsStore.getState().speakingId).toBe('m1');
   });
 
