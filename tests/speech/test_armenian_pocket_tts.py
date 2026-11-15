@@ -87,6 +87,7 @@ def test_synthesize_with_fake_model(tmp_path, monkeypatch, device):
     backend = ArmenianPocketTTSBackend()
     one = backend.synthesize("Բարև")
     two = backend.synthesize("Եվս մեկ նախադասություն")
+    mixed = backend.synthesize("Ասա ChatGPT կամ Gemini և AI։")
 
     assert one.audio.startswith(b"RIFF")
     assert one.sample_rate == 24000
@@ -94,7 +95,9 @@ def test_synthesize_with_fake_model(tmp_path, monkeypatch, device):
     assert two.audio.startswith(b"RIFF")
     assert [c[0] for c in calls].count("load") == 1
     assert [c[0] for c in calls].count("prompt") == 1
-    assert [c[0] for c in calls].count("generate") == 2
+    assert mixed.audio.startswith(b"RIFF")
+    assert [c[0] for c in calls].count("generate") == 3
+    assert ("generate", "voice", "Ասա Չաթ Ջի Փի Թի կամ Ջեմինի և Էյ Այ։") in calls
     assert backend._device == device
     assert [c for c in calls if c[0] == "to"] == (
         [("to", "cuda")] if device == "cuda" else []
