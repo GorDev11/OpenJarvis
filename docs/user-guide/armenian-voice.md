@@ -94,6 +94,32 @@ To synthesize speech through the *actual OpenJarvis API*:
 
 Use the built-in read-aloud button in the Chat UI for normal use.
 
+## Mixed Armenian and Latin text
+
+The Armenian Pocket-TTS backend normalizes Latin technical names **only for
+speech synthesis**. The chat answer remains unchanged visually. For example:
+
+- `ChatGPT` -> `Չաթ Ջի Փի Թի`
+- `Gemini` -> `Ջեմինի`
+- `AI` -> `Էյ Այ`
+- `OpenJarvis` -> `Օփեն Ջարվիս`
+- `Wi-Fi` -> `Վայֆայ`; `MQTT` -> `Էմ Քյու Թի Թի`
+
+There are also mappings for common AI tools, development technologies, and
+abbreviations. Unknown Latin tokens inside Armenian paragraphs are spoken
+letter by letter as a conservative fallback: arbitrary English names cannot
+always be pronounced accurately from spelling alone. Full English passages,
+URLs, and email addresses are not rewritten.
+
+This applies to API speech generation as well as the Desktop/Chat voice.
+After updating the Python source, **restart the Python backend** to load the
+new normalizer; no new model weights are needed. Check the input transformation
+without the model:
+
+    cd "$env:USERPROFILE\\OpenJarvis"
+    .\\.venv\\Scripts\\python.exe -c "from openjarvis.speech.armenian_pronunciation import normalize_armenian_speech as n; print(n('Ես օգտագործում եմ ChatGPT, Gemini, AI և OpenJarvis։'))"
+
+
 ## Progressive read-aloud (experimental)
 
 For the `armenian_pocket` backend, the Chat UI now divides long, completed
