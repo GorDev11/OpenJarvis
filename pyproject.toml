@@ -107,6 +107,9 @@ desktop = [
     "numpy>=1.24",
     "sounddevice>=0.5",
     "soundfile>=0.12",
+    # Optional local Eastern Armenian speech: keep the desktop boot-time uv sync
+    # from removing Pocket-TTS and its dependencies on Windows.
+    "pocket-tts==4.0.1; sys_platform == 'win32'",
 ]
 # Local neural TTS. Kokoro pulls spacy/misaki for G2P; espeak-ng must also be
 # present on PATH (brew install espeak-ng) for out-of-dictionary words.
