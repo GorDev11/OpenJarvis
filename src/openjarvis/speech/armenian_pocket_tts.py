@@ -16,6 +16,7 @@ from typing import Any, List
 
 from openjarvis.core.registry import TTSRegistry
 from openjarvis.speech.armenian_pronunciation import normalize_armenian_speech
+from openjarvis.speech.armenian_training_text import normalize_for_pocket_training
 from openjarvis.speech.tts import TTSBackend, TTSResult
 
 _DEFAULT_PROMPT = "hf://kyutai/tts-voices/alba-mackenna/casual.wav"
@@ -129,7 +130,11 @@ class ArmenianPocketTTSBackend(TTSBackend):
         with self._lock:
             self._ensure_loaded()
             # Only speech input is normalized; displayed chat messages stay original.
-            speakable_text = normalize_armenian_speech(text)
+            # The fine-tune was trained on hy_text.normalise() output.
+            # Apply author rules after the local pronunciation lexicon.
+            speakable_text = normalize_for_pocket_training(
+                normalize_armenian_speech(text)
+            )
             audio = self._model.generate_audio(self._voice, speakable_text)
             samples = audio.detach().cpu().numpy()
             sample_rate = int(self._model.sample_rate)
