@@ -94,6 +94,33 @@ To synthesize speech through the *actual OpenJarvis API*:
 
 Use the built-in read-aloud button in the Chat UI for normal use.
 
+## Progressive read-aloud (experimental)
+
+For the `armenian_pocket` backend, the Chat UI now divides long, completed
+assistant replies into WAV-sized speech segments (approximately 120 characters
+each). It begins playing the first segment while the next one is generated.
+This uses the existing `/v1/speech/synthesize` API; other TTS backends keep
+the previous whole-response playback behavior.
+
+This feature affects the **frontend**, not only the Python API. Pulling the
+feature branch updates the source but does **not** change an already installed
+Tauri desktop executable, which contains a compiled frontend bundle.
+
+Before rebuilding a Desktop app, run frontend checks:
+
+    cd frontend
+    npm ci
+    npm test
+    npm run build
+
+A new Desktop build or a frontend development session is required to see the
+progressive read-aloud behavior. Its deployment should be handled separately
+from the validated Python CUDA acceleration. Cancellation and playback order
+should be confirmed with the unit tests and then manually in the UI.
+
+This is segment-by-segment progressive playback **after the text reply
+finishes**, not token-level realtime streaming of the model response.
+
 ## Limitations
 
 - Only one voice ID (hy-default) and WAV audio are supported.
