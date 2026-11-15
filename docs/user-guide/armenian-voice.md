@@ -116,8 +116,8 @@ After updating the Python source, **restart the Python backend** to load the
 new normalizer; no new model weights are needed. Check the input transformation
 without the model:
 
-    cd "$env:USERPROFILE\\OpenJarvis"
-    .\\.venv\\Scripts\\python.exe -c "from openjarvis.speech.armenian_pronunciation import normalize_armenian_speech as n; print(n('Ես օգտագործում եմ ChatGPT, Gemini, AI և OpenJarvis։'))"
+    cd "$env:USERPROFILE\OpenJarvis"
+    .\.venv\Scripts\python.exe -c "from openjarvis.speech.armenian_pronunciation import normalize_armenian_speech as n; print(n('Ես օգտագործում եմ ChatGPT, Gemini, AI և OpenJarvis։'))"
 
 
 ## Progressive read-aloud (experimental)
