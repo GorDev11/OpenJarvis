@@ -65,8 +65,8 @@ export function ChatArea() {
       || previous.conversationId !== activeId || previous.messageId !== last?.id)) {
       liveVoiceRef.current = null;
       if (!streamingHere && allowed
-        && previous.conversationId === activeId && previous.messageId === last?.id
-        && last.role === 'assistant' && tts.speakingId === previous.messageId) {
+        && last !== undefined && previous.conversationId === activeId
+        && previous.messageId === last.id && last.role === 'assistant' && tts.speakingId === previous.messageId) {
         const tail = finishStreamingSpeech(last.content, previous.consumed);
         if (tail) void tts.appendLive(previous.messageId, tail);
         tts.finishLive(previous.messageId);
