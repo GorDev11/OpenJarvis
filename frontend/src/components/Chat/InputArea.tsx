@@ -116,18 +116,21 @@ export function InputArea() {
   // This prevents errors from trying to continue a stream with a stale model.
   const prevModelRef = useRef(selectedModel);
   useEffect(() => {
-    if (prevModelRef.current !== selectedModel && streamState.isStreaming) {
-      abortRef.current?.abort();
-      const allMessages = useAppStore.getState().messages;
-      const current = allMessages[allMessages.length - 1];
-      if (current?.role === 'assistant') useTtsStore.getState().markAutoSpoken(current.id);
-      useTtsStore.getState().stop();
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
+    if (prevModelRef.current !== selectedModel) {
+      if (streamState.isStreaming) {
+        abortRef.current?.abort();
+        const allMessages = useAppStore.getState().messages;
+        const current = allMessages[allMessages.length - 1];
+        if (current?.role === 'assistant') useTtsStore.getState().markAutoSpoken(current.id);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        resetStream();
+        abortRef.current = null;
       }
-      resetStream();
-      abortRef.current = null;
+      // Also interrupt speech from a reply that had already finished.
+      useTtsStore.getState().stop();
     }
     prevModelRef.current = selectedModel;
   }, [selectedModel, streamState.isStreaming, resetStream]);
