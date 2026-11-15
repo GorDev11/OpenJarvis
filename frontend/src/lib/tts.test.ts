@@ -104,6 +104,52 @@ describe('shared voice output', () => {
     expect(revoked).toContain(created[0]);
   });
 
+  it('starts Armenian playback after the first WAV while prefetching the next', async () => {
+    useTtsStore.setState({ backend: 'armenian_pocket' });
+    const first = deferred<Blob>();
+    const second = deferred<Blob>();
+    synth.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const text = Array(45).fill('Բարև, ես Ջարվիսն եմ։').join(' ');
+
+    const playing = useTtsStore.getState().speak('m1', text);
+    expect(synth).toHaveBeenCalledTimes(1);
+    first.resolve(new Blob(['first']));
+    await playing;
+
+    expect(FakeAudio.instances).toHaveLength(1);
+    expect(FakeAudio.instances[0].playCalls).toBe(1);
+    expect(synth).toHaveBeenCalledTimes(2);
+
+    second.resolve(new Blob(['second']));
+    await Promise.resolve();
+    FakeAudio.instances[0].onended?.();
+
+    await vi.waitFor(() => expect(FakeAudio.instances).toHaveLength(2));
+    expect(FakeAudio.instances[1].playCalls).toBe(1);
+    expect(useTtsStore.getState().speakingId).toBe('m1');
+  });
+
+  it('stopping during a prefetched segment prevents further playback', async () => {
+    useTtsStore.setState({ backend: 'armenian_pocket' });
+    const next = deferred<Blob>();
+    synth.mockResolvedValueOnce(new Blob(['first']));
+    synth.mockReturnValueOnce(next.promise);
+
+    await useTtsStore.getState().speak(
+      'm1', Array(30).fill('Հայերեն արագ ձայն։').join(' '),
+    );
+    expect(synth).toHaveBeenCalledTimes(2);
+
+    const nextSignal = synth.mock.calls[1][1]?.signal as AbortSignal;
+    useTtsStore.getState().stop();
+    expect(nextSignal.aborted).toBe(true);
+
+    next.resolve(new Blob(['late']));
+    await Promise.resolve();
+    expect(FakeAudio.instances).toHaveLength(1);
+    expect(useTtsStore.getState().state).toBe('idle');
+  });
+
   it('aborts a synthesis that is superseded before it resolves', async () => {
     const pending = deferred<Blob>();
     synth.mockReturnValueOnce(pending.promise);
