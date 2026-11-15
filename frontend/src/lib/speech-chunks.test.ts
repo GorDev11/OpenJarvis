@@ -29,6 +29,15 @@ describe('Armenian progressive speech segments', () => {
     expect(result.join(' ')).toBe(text);
   });
 
+  it('preserves dotted Latin product names for backend pronunciation', () => {
+    const text = 'Ես օգտագործում եմ Node.js։ Այն աշխատում է։';
+    const segments = splitSpeechText(text, 28);
+    expect(segments).toEqual([
+      'Ես օգտագործում եմ Node.js։',
+      'Այն աշխատում է։',
+    ]);
+  });
+
   it('validates the segment size', () => {
     expect(() => splitSpeechText('Բարև', 8)).toThrow('maxChars');
   });
