@@ -1,0 +1,63 @@
+name: Armenian Voice Windows Preview
+
+on:
+  push:
+    branches: [feature/armenian-voice]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'src/openjarvis/speech/**'
+      - 'tests/speech/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'scripts/build-armenian-desktop.ps1'
+      - '.github/workflows/armenian-voice-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: armenian-voice-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview-windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Use checked-in npm version
+        run: npm install --global npm@11.19.0
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend unit tests
+        working-directory: frontend
+        run: npm test
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build
+      - name: Compile Python voice modules
+        shell: pwsh
+        run: |
+          python -m compileall -q src/openjarvis/speech/armenian_audio.py src/openjarvis/speech/armenian_pocket_tts.py src/openjarvis/speech/armenian_training_text.py src/openjarvis/speech/armenian_pronunciation.py
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri -> target
+      - name: Build isolated Windows x64 NSIS installer
+        working-directory: frontend
+        run: npx tauri build --bundles nsis --config src-tauri/tauri.armenian-preview.conf.json
+      - name: Upload unsigned preview installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjarvis-armenian-windows-x64-preview
+          path: frontend/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
