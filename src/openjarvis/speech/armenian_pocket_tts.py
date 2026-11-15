@@ -32,7 +32,9 @@ class ArmenianPocketTTSBackend(TTSBackend):
     backend_id = "armenian_pocket"
 
     def __init__(self) -> None:
-        default_config = Path.home() / "OpenJarvis-Armenian-TTS" / "config_armenian.yaml"
+        default_config = (
+            Path.home() / "OpenJarvis-Armenian-TTS" / "config_armenian.yaml"
+        )
         self._config_path = Path(
             os.environ.get("OPENJARVIS_ARMENIAN_TTS_CONFIG") or str(default_config)
         ).expanduser()
@@ -197,7 +199,12 @@ class ArmenianPocketTTSBackend(TTSBackend):
             duration_seconds=duration,
             voice_id=_VOICE_ID,
             sample_rate=sample_rate,
-            metadata={"backend": self.backend_id, "language": "hy", "device": self._device, "variant": self._variant},
+            metadata={
+                "backend": self.backend_id,
+                "language": "hy",
+                "device": self._device,
+                "variant": self._variant,
+            },
         )
 
     def available_voices(self) -> List[str]:
