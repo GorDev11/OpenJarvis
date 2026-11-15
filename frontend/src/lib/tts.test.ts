@@ -273,6 +273,79 @@ describe('shared voice output', () => {
   });
 });
 
+describe('live sentence playback before completion', () => {
+  it('starts the first sentence before the full response is available', async () => {
+    useTtsStore.setState({ backend: 'armenian_pocket' });
+    const first = deferred<Blob>();
+    const second = deferred<Blob>();
+    synth.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const store = useTtsStore.getState();
+    store.beginLive('live');
+    const started = store.appendLive('live', 'Բարև։');
+    expect(synth).toHaveBeenCalledTimes(1);
+    first.resolve(new Blob(['first']));
+    await started;
+    expect(FakeAudio.instances).toHaveLength(1);
+    expect(useTtsStore.getState().state).toBe('speaking');
+
+    // The stream is still open, yet the next sentence may already be prepared.
+    void store.appendLive('live', 'Այսօր կարող եմ օգնել։');
+    expect(synth).toHaveBeenCalledTimes(2);
+    second.resolve(new Blob(['second']));
+    await Promise.resolve();
+    store.finishLive('live');
+    FakeAudio.instances[0].onended?.();
+    await vi.waitFor(() => expect(FakeAudio.instances).toHaveLength(2));
+    expect(FakeAudio.instances[1].playCalls).toBe(1);
+    FakeAudio.instances[1].onended?.();
+    expect(useTtsStore.getState().state).toBe('idle');
+  });
+
+  it('waits for new sentences rather than ending an open live stream', async () => {
+    synth.mockResolvedValue(new Blob(['one']));
+    const store = useTtsStore.getState();
+    store.beginLive('live');
+    await store.appendLive('live', 'Բարև։');
+    FakeAudio.instances[0].onended?.();
+    expect(useTtsStore.getState().speakingId).toBe('live');
+    expect(synth).toHaveBeenCalledTimes(1);
+    await store.appendLive('live', 'Շարունակությունը։');
+    expect(FakeAudio.instances).toHaveLength(2);
+    store.finishLive('live');
+    FakeAudio.instances[1].onended?.();
+    expect(useTtsStore.getState().state).toBe('idle');
+  });
+
+  it('stops all queued live audio when cancelled', async () => {
+    const first = deferred<Blob>();
+    synth.mockReturnValueOnce(first.promise);
+    const store = useTtsStore.getState();
+    store.beginLive('live');
+    const job = store.appendLive('live', 'Բարև։');
+    const signal = synth.mock.calls[0][1]?.signal as AbortSignal;
+    store.stop();
+    expect(signal.aborted).toBe(true);
+    first.resolve(new Blob(['late']));
+    await job;
+    expect(FakeAudio.instances).toHaveLength(0);
+    expect(useTtsStore.getState().state).toBe('idle');
+  });
+
+  it('ignores old stream chunks after switching sessions', async () => {
+    synth.mockResolvedValue(new Blob(['wav']));
+    const store = useTtsStore.getState();
+    store.beginLive('first');
+    await store.appendLive('first', 'Հին պատասխան։');
+    const oldAudio = FakeAudio.instances[0];
+    store.beginLive('second');
+    expect(oldAudio.paused).toBe(true);
+    await store.appendLive('first', 'Սա չպետք է հնչի։');
+    await store.appendLive('second', 'Նոր պատասխան։');
+    expect(FakeAudio.instances).toHaveLength(2);
+    expect(useTtsStore.getState().speakingId).toBe('second');
+  });
+});
+
 describe('autoplay gating', () => {
   it('stays silent when a finished conversation is merely restored', () => {
     expect(
