@@ -13,7 +13,9 @@ import re
 
 # Case-insensitive whole Latin tokens; hyphenated or dotted product names stay
 # together (for example, Wi-Fi and Node.js). Armenian suffixes remain intact.
-_LATIN_TOKEN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9]*(?:[._+-][A-Za-z0-9]+)*")
+_LATIN_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9]*(?:[._+-][A-Za-z0-9]+)*"
+)
 _ARMENIAN = re.compile(r"[\u0531-\u0556\u0561-\u0587]")
 _PROTECTED = re.compile(
     r"(?:https?://|www\.)\S+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",
@@ -123,7 +125,10 @@ def normalize_armenian_speech(text: str) -> str:
         if len(token) > 32:
             return token
 
-        letters = [_ENGLISH_LETTERS.get(char.lower(), _DIGITS.get(char)) for char in token]
+        letters = [
+            _ENGLISH_LETTERS.get(char.lower(), _DIGITS.get(char))
+            for char in token
+        ]
         if any(part is None for part in letters):
             return token
         return " ".join(letters)
