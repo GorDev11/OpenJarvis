@@ -110,6 +110,8 @@ desktop = [
     # Optional local Eastern Armenian speech: keep the desktop boot-time uv sync
     # from removing Pocket-TTS and its dependencies on Windows.
     "pocket-tts==4.0.1; sys_platform == 'win32'",
+    # Proven GPU build for the RTX 3060 test machine; uv sync retains it.
+    "torch==2.13.0; sys_platform == 'win32'",
 ]
 # Local neural TTS. Kokoro pulls spacy/misaki for G2P; espeak-ng must also be
 # present on PATH (brew install espeak-ng) for out-of-dictionary words.
@@ -245,6 +247,13 @@ fallback_version = "0.0.0+unknown"
 
 [tool.uv.sources]
 openjarvis-rust = { path = "rust/crates/openjarvis-python" }
+# Use the tested CUDA 13.0 PyTorch wheel on Windows; other OSes use PyPI.
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
 
 [tool.hatch.build.targets.sdist]
 # Tauri release bundles carry these executables; Python source distributions
