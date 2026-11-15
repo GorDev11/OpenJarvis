@@ -121,6 +121,39 @@ without the model:
     .\.venv\Scripts\python.exe -c "from openjarvis.speech.armenian_pronunciation import normalize_armenian_speech as n; print(n('Ես օգտագործում եմ ChatGPT, Gemini, AI և OpenJarvis։'))"
 
 
+## Author training-time normalization (pinned)
+
+Pocket-TTS Armenian was trained with the author's
+`configs/hy_text.py:normalise()` function. This is different from the custom
+tech-name pronunciation dictionary: it transforms numerals into Armenian
+words, normalizes Armenian punctuation and quotes, and handles remaining Latin
+letters. The backend applies the tech-name dictionary first, then applies
+the author's original normalizer immediately before synthesizing the audio.
+
+At first use, `huggingface_hub` fetches **both** `configs/hy_itn.py` and
+`configs/hy_text.py` from the exact model revision
+`b9ea677231407e274bd9d8b0a1404a49b6247ae3`. The scripts are cached
+locally (and imported as Python modules); neither the scripts nor weights are
+copied into OpenJarvis Git. No newer revision is selected automatically.
+Source and attribution: https://huggingface.co/mnjoyan/pocket-tts-armenian
+(model repository license: CC-BY-4.0).
+
+To prepare the dependency before the first audio request:
+
+    cd "$env:USERPROFILE\OpenJarvis"
+    .\.venv\Scripts\python.exe -c "from openjarvis.speech.armenian_pronunciation import normalize_armenian_speech as p; from openjarvis.speech.armenian_training_text import normalize_for_pocket_training as n; print(n(p('Ես օգտագործում եմ ChatGPT և 2026 թվականին։')))"
+
+If the HF download fails, confirm Internet access or fetch
+`configs/hy_itn.py` at the pinned revision with `hf_hub_download`.
+To compare sound against the previous behavior, set
+`OPENJARVIS_ARMENIAN_TTS_TRAINING_NORMALIZE=0` before starting the
+Python server. Leave the voice/model and CUDA settings unchanged.
+
+**Important:** the normalizer addresses text preparation, but it cannot
+guarantee good pronunciation: the run4_60k model and the chosen voice
+reference may still have accent or prosody limitations. Compare the same
+short Armenian phrase before and after enabling the normalizer.
+
 ## Progressive read-aloud (experimental)
 
 For the `armenian_pocket` backend, the Chat UI now divides long, completed
