@@ -2143,16 +2143,19 @@ def create_agent_manager_router(
                         event_bus=_srv_bus,
                         trace_store=_ts2,
                     )
+
                     # OPENJARVIS_DESKTOP_CONFIRM_PATCH_START
                     # For Desktop Interact -> Ask, require a fresh Windows
                     # Yes/No decision per sensitive tool invocation.
                     # Deny by default (including on errors and non-Windows).
                     def _openjarvis_desktop_confirm(prompt):
                         import sys
+
                         if sys.platform != "win32":
                             return False
                         try:
                             import ctypes
+
                             flags = 0x00000004 | 0x00000030 | 0x00000100 | 0x00040000
                             answer = ctypes.windll.user32.MessageBoxW(
                                 None,
@@ -2165,6 +2168,7 @@ def create_agent_manager_router(
                             return answer == 6  # IDYES. No/close deny.
                         except Exception:
                             return False
+
                     executor._confirm_callback = _openjarvis_desktop_confirm
                     # OPENJARVIS_DESKTOP_CONFIRM_PATCH_END
                     system = _make_lightweight_system(
