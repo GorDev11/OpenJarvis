@@ -9,7 +9,10 @@ export function splitSpeechText(text: string, maxChars = 120): string[] {
   if (!normalized) return [];
   if (maxChars < 16) throw new Error('maxChars must be at least 16');
 
-  const sentences = normalized.match(/[^.!?։]+[.!?։]*|[.!?։]+/g) ?? [normalized];
+  // Break at sentence punctuation only when followed by whitespace.
+  // Internal dots in names like Node.js / Next.js are not sentence ends:
+  // splitting there prevents the Armenian backend from recognizing the name.
+  const sentences = normalized.split(/(?<=[.!?։])\s+/u);
   const segments: string[] = [];
   let pending = '';
 
