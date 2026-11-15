@@ -16,9 +16,23 @@ It uses the model/configuration already tested separately in
 
 ## Install dependencies on Windows
 
-The fork declares `pocket-tts==4.0.1` in the Desktop dependency extra
-(on Windows). This is important: the Desktop executable runs `uv sync`
-on launch and removes unlisted, manually installed Python packages.
+The fork declares `pocket-tts==4.0.1` and the tested
+`torch==2.13.0` CUDA 13.0 wheel for Windows Desktop in its Python dependency
+configuration. This matters because Desktop runs `uv sync` on launch and
+removes manually installed packages that aren't listed in its lockfile.
+Other operating systems continue resolving PyTorch through PyPI.
+
+The TTS backend now uses CUDA automatically when `torch.cuda.is_available()`
+is true. To force CPU mode (e.g., if VRAM is needed by Ollama), set
+`OPENJARVIS_ARMENIAN_TTS_DEVICE=cpu` in the Desktop process environment.
+Alternatively, set `OPENJARVIS_ARMENIAN_TTS_DEVICE=cuda` to require CUDA
+explicitly (and fail if CUDA is unavailable). The default is `auto`.
+
+For the RTX 3060 test system, a short Armenian utterance took about
+1.10–1.16 seconds with the CUDA wheel, compared with 7–9 seconds on CPU.
+Long replies still require more processing: the current OpenJarvis API and
+frontend wait for the complete WAV audio before playback. Streaming playback
+is a separate future improvement.
 
 After pulling the feature branch, close Desktop and run once from the
 OpenJarvis checkout:
@@ -30,6 +44,15 @@ Commit the regenerated `uv.lock` to the feature branch to keep installs
 reproducible. After this, Desktop's own dependency synchronization should
 retain Pocket-TTS, and the separate .venv-pocket test environment remains
 independent.
+
+Before restarting Desktop, verify CUDA in the main OpenJarvis environment:
+
+    .\.venv\Scripts\python.exe -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+
+On the validated RTX 3060 machine, expect a `+cu130` PyTorch version
+and `True`. The first model load may still take longer than subsequent
+synthesis calls.
+
 
 ## Select the backend
 
