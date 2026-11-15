@@ -7,8 +7,8 @@ The model loads lazily on first speech synthesis, and is then reused.
 
 from __future__ import annotations
 
-import importlib.util
 import copy
+import importlib.util
 import io
 import os
 import threading
