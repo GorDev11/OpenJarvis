@@ -562,7 +562,11 @@ class OrchestratorAgent(ToolUsingAgent):
 
             # Build generate kwargs
             gen_kwargs: dict[str, Any] = {}
-            if openai_tools:
+            # A deterministic route already executed exactly the reviewed
+            # read-only diagnostic(s) requested by the user. The follow-up
+            # model turn must summarize those results, not escalate to a
+            # broader tool such as shell_exec or repeat extra diagnostics.
+            if openai_tools and not deterministic_routes:
                 gen_kwargs["tools"] = openai_tools
 
             if pending_routed_calls:

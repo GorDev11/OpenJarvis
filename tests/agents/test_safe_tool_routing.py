@@ -49,6 +49,33 @@ def test_combined_request_routes_both_read_only_tools() -> None:
 @pytest.mark.parametrize(
     "query",
     [
+        (
+            "Ստուգիր իմ Windows համակարգչի ցանցը network_diagnostics "
+            "գործիքով և ցույց տուր IP-ը, gateway-ը ու DNS-ը"
+        ),
+        "Проверь сеть моего Windows-компьютера инструментом network_diagnostics",
+        "Check my Windows computer network with network_diagnostics and show DNS",
+    ],
+)
+def test_explicit_network_tool_does_not_route_system_diagnostics(query: str) -> None:
+    routes = select_safe_tool_routes(
+        query,
+        ["network_diagnostics", "system_diagnostics", "shell_exec"],
+    )
+    assert [route.name for route in routes] == ["network_diagnostics"]
+
+
+def test_windows_network_phrase_without_tool_name_does_not_route_system() -> None:
+    routes = select_safe_tool_routes(
+        "Ստուգիր իմ Windows համակարգչի ցանցը և ցույց տուր gateway-ը ու DNS-ը",
+        ["network_diagnostics", "system_diagnostics"],
+    )
+    assert [route.name for route in routes] == ["network_diagnostics"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
         "Explain the difference between Ethernet link speed and internet speed",
         "Что такое DNS?",
         "Ի՞նչ է ինտերնետը",

@@ -49,10 +49,46 @@ _NETWORK_PATTERNS = (
     r"(?:միացված|подключенн|connected).{0,25}(?:սարք|устройств|device)",
 )
 
-_SYSTEM_PATTERNS = (
-    r"\b(?:computer|system|windows|cpu|ram|memory|gpu|disk|drive|process|service|installed\s+(?:apps?|programs?)|event\s+errors?)\b",
-    r"\b(?:компьютер|систем|windows|процессор|памят|озу|видеокарт|gpu|диск|процесс|служб|установленн.{0,12}программ|событи.{0,8}ошиб)\w*",
-    r"(?:համակարգիչ|համակարգ|windows|պրոցեսոր|cpu|օպերատիվ\s+հիշող|ram|գրաֆիկական|gpu|սկավառակ|գործընթաց|ծառայություն|տեղադրված\s+ծրագր|համակարգային\s+սխալ)",
+_SYSTEM_GENERIC_PATTERNS = (
+    r"\b(?:computer|system|windows)\b",
+    r"\b(?:компьютер|систем|windows)\w*",
+    r"(?:համակարգիչ|համակարգ|windows)",
+)
+
+_SYSTEM_DETAIL_PATTERNS = (
+    r"\b(?:cpu|ram|memory|gpu|disk|drive|process|service|installed\s+(?:apps?|programs?)|event\s+errors?)\b",
+    r"\b(?:процессор|памят|озу|видеокарт|gpu|диск|процесс|служб|установленн.{0,12}программ|событи.{0,8}ошиб)\w*",
+    r"(?:պրոցեսոր|cpu|օպերատիվ\s+հիշող|ram|գրաֆիկական|gpu|սկավառակ|գործընթաց|ծառայություն|տեղադրված\s+ծրագր|համակարգային\s+սխալ)",
+)
+
+_COMBINED_SYSTEM_NETWORK_PATTERNS = (
+    (
+        r"\b(?:computer|system|windows)\b\s*,?\s+(?:and|plus)\s+"
+        r"\b(?:internet|network|wi[ -]?fi|lan|dns|gateway)\b"
+    ),
+    (
+        r"\b(?:internet|network|wi[ -]?fi|lan|dns|gateway)\b\s*,?\s+"
+        r"(?:and|plus)\s+\b(?:computer|system|windows)\b"
+    ),
+    (
+        r"\b(?:компьютер|систем|windows)\w*\s*,?\s+и\s+"
+        r"\b(?:интернет|сет[ьи]|wi[ -]?fi|вайфай|днс|шлюз)\b"
+    ),
+    (
+        r"\b(?:интернет|сет[ьи]|wi[ -]?fi|вайфай|днс|шлюз)\b\s*,?\s+"
+        r"и\s+\b(?:компьютер|систем|windows)\w*"
+    ),
+    (
+        r"(?:համակարգիչ|համակարգ|windows)(?:ը|ն)?\s*,?\s+"
+        r"(?:և|եւ|ու)\s+"
+        r"(?:ինտերնետ|ցանց|վայֆայ|wi[ -]?fi|dns|դնս|gateway|շլյուզ)"
+        r"(?:ը|ն)?"
+    ),
+    (
+        r"(?:ինտերնետ|ցանց|վայֆայ|wi[ -]?fi|dns|դնս|gateway|շլյուզ)"
+        r"(?:ը|ն)?\s*,?\s+(?:և|եւ|ու)\s+"
+        r"(?:համակարգիչ|համակարգ|windows)(?:ը|ն)?"
+    ),
 )
 
 
@@ -80,10 +116,27 @@ def select_safe_tool_routes(
         return []
 
     available = set(available_tools)
+    explicitly_named = [
+        name
+        for name in ("network_diagnostics", "system_diagnostics")
+        if name in available and re.search(rf"\b{re.escape(name)}\b", text)
+    ]
+    if explicitly_named:
+        return [SafeToolRoute(name) for name in explicitly_named]
+
+    network_requested = _matches_any(_NETWORK_PATTERNS, text)
+    generic_system_requested = _matches_any(_SYSTEM_GENERIC_PATTERNS, text)
+    detailed_system_requested = _matches_any(_SYSTEM_DETAIL_PATTERNS, text)
+    combined_request = _matches_any(_COMBINED_SYSTEM_NETWORK_PATTERNS, text)
+
     routes: list[SafeToolRoute] = []
-    if "network_diagnostics" in available and _matches_any(_NETWORK_PATTERNS, text):
+    if "network_diagnostics" in available and network_requested:
         routes.append(SafeToolRoute("network_diagnostics"))
-    if "system_diagnostics" in available and _matches_any(_SYSTEM_PATTERNS, text):
+    if "system_diagnostics" in available and (
+        detailed_system_requested
+        or combined_request
+        or (generic_system_requested and not network_requested)
+    ):
         routes.append(SafeToolRoute("system_diagnostics"))
     return routes
 

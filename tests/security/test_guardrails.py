@@ -173,6 +173,91 @@ class TestGuardrailsEngineInputScanning:
         assert len(input_alerts) == 0
 
 
+class TestGuardrailsTrustedDiagnosticPII:
+    def test_trusted_network_result_preserves_ip_but_redacts_secrets(self) -> None:
+        """Local network facts may reach the model; credentials still may not."""
+
+        secret = "sk-abc123def456ghi789jkl012"
+        public_dns = "8.8.8.8"
+        mock = _make_mock_engine(
+            f"DNS is {public_dns}; leaked credential {secret}",
+        )
+        guarded = GuardrailsEngine(
+            mock,
+            mode=RedactionMode.REDACT,
+            pii_passthrough_tools={"network_diagnostics"},
+        )
+        messages = [
+            Message(
+                role=Role.TOOL,
+                name="network_diagnostics",
+                tool_call_id="safe-route-network-1",
+                content=(
+                    f'{{"gateway":"192.168.1.1","dns":"{public_dns}",'
+                    f'"credential":"{secret}"}}'
+                ),
+            )
+        ]
+
+        result = guarded.generate(messages, model="test")
+
+        sent = mock.generate.call_args.args[0][0].content
+        assert "192.168.1.1" in sent
+        assert public_dns in sent
+        assert secret not in sent
+        assert "[REDACTED:openai_key]" in sent
+        assert public_dns in result["content"]
+        assert secret not in result["content"]
+        assert "[REDACTED:openai_key]" in result["content"]
+
+    @pytest.mark.parametrize(
+        ("role", "name"),
+        [
+            (Role.USER, None),
+            (Role.TOOL, "system_diagnostics"),
+            (Role.TOOL, "shell_exec"),
+        ],
+    )
+    def test_untrusted_message_still_redacts_ip(self, role, name) -> None:
+        public_dns = "8.8.8.8"
+        mock = _make_mock_engine("OK")
+        guarded = GuardrailsEngine(
+            mock,
+            mode=RedactionMode.REDACT,
+            pii_passthrough_tools={"network_diagnostics"},
+        )
+        messages = [Message(role=role, name=name, content=f"DNS {public_dns}")]
+
+        guarded.generate(messages, model="test")
+
+        sent = mock.generate.call_args.args[0][0].content
+        assert public_dns not in sent
+        assert "[REDACTED:ipv4_address]" in sent
+
+    def test_historical_network_result_does_not_relax_later_output(self) -> None:
+        public_dns = "8.8.8.8"
+        mock = _make_mock_engine(f"Unrelated output {public_dns}")
+        guarded = GuardrailsEngine(
+            mock,
+            mode=RedactionMode.REDACT,
+            pii_passthrough_tools={"network_diagnostics"},
+        )
+        messages = [
+            Message(
+                role=Role.TOOL,
+                name="network_diagnostics",
+                content=f"Prior DNS {public_dns}",
+            ),
+            Message(role=Role.ASSISTANT, content="Prior summary"),
+            Message(role=Role.USER, content="Now answer a different question"),
+        ]
+
+        result = guarded.generate(messages, model="test")
+
+        assert public_dns not in result["content"]
+        assert "[REDACTED:ipv4_address]" in result["content"]
+
+
 class TestGuardrailsEngineDelegation:
     def test_delegates_close(self) -> None:
         mock = _make_mock_engine()

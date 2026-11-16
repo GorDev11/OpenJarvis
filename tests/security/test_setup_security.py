@@ -71,6 +71,41 @@ class TestSetupSecurityEnabled:
         # Should not raise — scanner failure is caught
         assert isinstance(sec, SecurityContext)
 
+    @pytest.mark.skipif(not _has_rust(), reason="Rust extension not compiled")
+    def test_desktop_local_engine_trusts_only_network_diagnostic_pii(
+        self,
+        monkeypatch,
+    ) -> None:
+        engine = _make_mock_engine()
+        engine.engine_id = "ollama"
+        monkeypatch.setenv("OPENJARVIS_DESKTOP", "1")
+
+        sec = setup_security(_make_config(), engine, EventBus())
+
+        assert sec.engine._pii_passthrough_tools == frozenset({"network_diagnostics"})
+
+    @pytest.mark.skipif(not _has_rust(), reason="Rust extension not compiled")
+    @pytest.mark.parametrize(
+        ("desktop", "engine_id"),
+        [(False, "ollama"), (True, "cloud"), (True, "openai-compat")],
+    )
+    def test_untrusted_or_remote_engine_keeps_pii_redaction(
+        self,
+        monkeypatch,
+        desktop,
+        engine_id,
+    ) -> None:
+        engine = _make_mock_engine()
+        engine.engine_id = engine_id
+        if desktop:
+            monkeypatch.setenv("OPENJARVIS_DESKTOP", "1")
+        else:
+            monkeypatch.delenv("OPENJARVIS_DESKTOP", raising=False)
+
+        sec = setup_security(_make_config(), engine, EventBus())
+
+        assert sec.engine._pii_passthrough_tools == frozenset()
+
     @pytest.mark.parametrize("profile", ["", "personal", "shared", "server"])
     def test_enabled_policy_fails_closed_when_initialization_fails(
         self, monkeypatch, profile

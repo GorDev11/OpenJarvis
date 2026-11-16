@@ -67,6 +67,31 @@ class _ThinkStub(BaseTool):
         )
 
 
+class _StaticToolStub(BaseTool):
+    tool_id = "static_test_tool"
+
+    def __init__(self, name: str, content: str = "ok") -> None:
+        self.name = name
+        self.content = content
+        self.calls = 0
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.name,
+            description=f"Test tool {self.name}.",
+            parameters={"type": "object", "properties": {}},
+        )
+
+    def execute(self, **params) -> ToolResult:
+        self.calls += 1
+        return ToolResult(
+            tool_name=self.name,
+            content=self.content,
+            success=True,
+        )
+
+
 def _make_engine_no_tools(content: str = "Final answer.") -> MagicMock:
     """Engine that never returns tool calls."""
     engine = MagicMock()
@@ -345,6 +370,34 @@ class TestOrchestratorAgent:
         call_kwargs = engine.generate.call_args[1]
         assert "tools" in call_kwargs
         assert len(call_kwargs["tools"]) == 1
+
+    def test_deterministic_network_route_suppresses_extra_model_tools(self):
+        engine = _make_engine_no_tools("DNS-ը հասանելի է, gateway-ը՝ 192.168.1.1։")
+        network = _StaticToolStub(
+            "network_diagnostics",
+            '{"gateway":"192.168.1.1","dns_ok":true}',
+        )
+        system = _StaticToolStub("system_diagnostics")
+        shell = _StaticToolStub("shell_exec")
+        agent = OrchestratorAgent(
+            engine,
+            "test-model",
+            tools=[network, system, shell],
+        )
+
+        result = agent.run(
+            "Ստուգիր իմ Windows համակարգչի ցանցը network_diagnostics գործիքով"
+        )
+
+        assert result.content == "DNS-ը հասանելի է, gateway-ը՝ 192.168.1.1։"
+        assert [item.tool_name for item in result.tool_results] == [
+            "network_diagnostics"
+        ]
+        assert network.calls == 1
+        assert system.calls == 0
+        assert shell.calls == 0
+        assert "tools" not in engine.generate.call_args.kwargs
+        assert result.metadata["deterministic_routes"] == ["network_diagnostics"]
 
     def test_no_tools_no_tools_kwarg(self):
         engine = _make_engine_no_tools()
