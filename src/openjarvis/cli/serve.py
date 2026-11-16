@@ -797,6 +797,7 @@ def serve(
         capability_policy=sec.capability_policy,
         rate_limiter=sec.rate_limiter,
         audit_logger=sec.audit_logger,
+        security_context=sec,
         api_key=api_key,
         webhook_config=webhook_config,
         cors_origins=cors_origins,

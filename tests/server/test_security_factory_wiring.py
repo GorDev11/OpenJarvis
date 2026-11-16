@@ -106,6 +106,35 @@ def test_factory_preserves_explicit_security_primitives(monkeypatch) -> None:
     assert app.state.audit_logger is derived_audit
 
 
+def test_factory_does_not_double_wrap_preconfigured_security(monkeypatch) -> None:
+    """A disabled optional primitive is not evidence security was skipped."""
+
+    setup = MagicMock()
+    monkeypatch.setattr("openjarvis.security.setup_security", setup)
+    outer_engine = MagicMock(name="instrumented-multi-engine")
+    guarded_inner = MagicMock(name="guarded-local-engine")
+    audit = object()
+    security = SecurityContext(
+        engine=guarded_inner,
+        capability_policy=None,
+        rate_limiter=None,
+        audit_logger=audit,
+    )
+
+    app = create_app(
+        outer_engine,
+        "model",
+        config=_config(),
+        security_context=security,
+    )
+
+    setup.assert_not_called()
+    assert app.state.engine is outer_engine
+    assert app.state.capability_policy is None
+    assert app.state.rate_limiter is None
+    assert app.state.audit_logger is audit
+
+
 def test_factory_propagates_strict_security_setup_failure(monkeypatch) -> None:
     monkeypatch.setattr(
         "openjarvis.security.setup_security",

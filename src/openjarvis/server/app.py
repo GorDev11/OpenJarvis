@@ -177,6 +177,7 @@ def create_app(
     capability_policy=None,
     rate_limiter=None,
     audit_logger=None,
+    security_context=None,
     api_key: str = "",
     webhook_config: dict | None = None,
     cors_origins: list[str] | None = None,
@@ -207,7 +208,21 @@ def create_app(
             from openjarvis.core.events import EventBus
 
             bus = EventBus(record_history=False)
-        if any(
+        if security_context is not None:
+            # ``jarvis serve`` already applied GuardrailsEngine before
+            # instrumentation and MultiEngine discovery. Missing optional
+            # primitives (for example a disabled rate limiter) are valid and
+            # must not trigger a second setup_security() pass around the
+            # outer MultiEngine. Double wrapping re-scanned trusted local
+            # diagnostic summaries and turned their IP addresses back into
+            # [REDACTED] in Desktop chat.
+            if capability_policy is None:
+                capability_policy = security_context.capability_policy
+            if rate_limiter is None:
+                rate_limiter = security_context.rate_limiter
+            if audit_logger is None:
+                audit_logger = security_context.audit_logger
+        elif any(
             primitive is None
             for primitive in (capability_policy, rate_limiter, audit_logger)
         ):
