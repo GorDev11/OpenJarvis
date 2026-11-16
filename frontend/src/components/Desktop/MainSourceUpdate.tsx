@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { isTauri } from '../../lib/api';
 
-const CHECK_EVERY_MS = 10 * 60 * 1000;
+// Direct GitHub WebSockets are unavailable to installed clients; use fast, bounded polling.
+const CHECK_EVERY_MS = 15 * 1000;
 const DISMISSED_KEY = 'oj-main-update-dismissed-sha';
 
 export type MainSourceStatus = {
@@ -25,13 +26,18 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   const [error, setError] = useState('');
   const [dismissed, setDismissed] = useState(false);
   const updating = useRef(false);
+  const checking = useRef(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState('');
 
   const check = useCallback(async () => {
-    if (!isTauri() || updating.current) return;
-    setPhase('checking');
+    if (!isTauri() || updating.current || checking.current) return;
+    checking.current = true;
+    setPhase(prev => prev === 'available' || prev === 'updated' ? prev : 'checking');
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const result = await invoke<MainSourceStatus>('check_main_update');
+      if (updating.current) return;
+      setLastCheckedAt(new Date().toLocaleTimeString());
       setStatus(result);
       setError('');
       setPhase(result.update_available ? 'available' : 'idle');
@@ -40,13 +46,19 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
           try { return localStorage.getItem(DISMISSED_KEY) === result.latest_sha; } catch { return false; }
         })();
         setDismissed(suppressed);
+      } else {
+        setDismissed(false);
       }
     } catch (e) {
       const msg = String(e);
       // Only report errors when the user explicitly asks to check or when
       // an update is already visible. Regular offline polling is silent.
-      setError(msg);
-      setPhase('idle');
+      if (!updating.current) {
+        setError(msg);
+        setPhase(prev => prev === 'available' || prev === 'updated' ? prev : 'idle');
+      }
+    } finally {
+      checking.current = false;
     }
   }, []);
 
@@ -54,7 +66,19 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
     if (!isTauri()) return;
     void check();
     const timer = window.setInterval(() => { void check(); }, CHECK_EVERY_MS);
-    return () => window.clearInterval(timer);
+    const onFocusOrOnline = () => { void check(); };
+    const onVisibilityChange = () => {
+      if (!document.hidden) void check();
+    };
+    window.addEventListener('focus', onFocusOrOnline);
+    window.addEventListener('online', onFocusOrOnline);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onFocusOrOnline);
+      window.removeEventListener('online', onFocusOrOnline);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [check]);
 
   const update = useCallback(async () => {
@@ -105,7 +129,9 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
         )}
         <span style={{ color: 'var(--color-text-tertiary)' }}>
           {status?.branch === 'main' ? 'main' : status?.branch || 'GitHub'} · {status?.current_sha?.slice(0, 7)}
+          {status?.update_available ? ` → ${status.latest_sha.slice(0, 7)}` : ''}
         </span>
+        {lastCheckedAt && <span style={{ color: 'var(--color-text-tertiary)' }}>Ստուգվել է՝ {lastCheckedAt}</span>
         {status && <span style={{ color: 'var(--color-text-secondary)' }}>{status.message}</span>}
         {error && <span role="alert" style={{ color: 'var(--color-error)' }}>{error}</span>}
       </div>

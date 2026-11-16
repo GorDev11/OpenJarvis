@@ -36,7 +36,7 @@ def test_chat_surfaces_main_update_notification() -> None:
     app = (ROOT / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
     widget = (FRONTEND / "MainSourceUpdate.tsx").read_text(encoding="utf-8")
     assert "<MainSourceUpdate />" in app
-    assert "CHECK_EVERY_MS = 10 * 60 * 1000" in widget
+    assert "CHECK_EVERY_MS = 15 * 1000" in widget
     assert "apply_main_update" in widget
     assert "check_main_update" in widget
 
@@ -80,3 +80,16 @@ def test_signed_rust_tests_require_built_tauri_assets() -> None:
         "cargo test --lib --features armenian-preview"
     )
     assert "frontend/dist/index.html" in workflow
+
+
+def test_main_update_checks_quickly_without_overlapping_requests() -> None:
+    widget = (FRONTEND / "MainSourceUpdate.tsx").read_text(encoding="utf-8")
+    assert "CHECK_EVERY_MS = 15 * 1000" in widget
+    assert "checking.current" in widget
+    assert "window.setInterval" in widget
+    assert "window.addEventListener('focus'" in widget
+    assert "window.addEventListener('online'" in widget
+    assert "document.addEventListener('visibilitychange'" in widget
+    assert "window.removeEventListener('focus'" in widget
+    assert "document.removeEventListener('visibilitychange'" in widget
+    assert "setLastCheckedAt" in widget

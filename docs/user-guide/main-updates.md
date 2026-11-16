@@ -10,7 +10,7 @@ New preview builds of OpenJarvis Armenian Preview have a separate **GitHub
 main updates** indicator at the top of the chat and a manual **Check GitHub
 main** action in Settings → Updates.
 
-- On opening the app, and every 10 minutes while open, the desktop checks
+- On opening the app, and every 15 seconds while open (and on app focus or reconnect), the desktop checks
   `refs/heads/main` on `https://github.com/GorDev11/OpenJarvis.git`.
 - When a different commit is published, the UI offers **Թարմացնել / Update**.
 - Clicking updates only the **installed Python backend Git source** in the
@@ -60,7 +60,7 @@ can use `git fetch origin main` then `git switch main` and
    `armenian-preview` feature; run Rust, frontend and Python tests.
 2. Install the new Preview; check GitHub main in Settings.
 3. Push a harmless test commit to `main`. Confirm an update banner appears
-   on the installed Preview within 10 minutes.
+   on the installed Preview within about 15 seconds while online (network conditions permitting).
 4. Click Update and confirm the installed `src` checkout is now on
    `main` at the new SHA, and the owned backend restarts.
 5. Validate dirty worktree refusal, offline failure, same-SHA no-op, and

@@ -3,7 +3,7 @@
 OpenJarvis now has two distinct update mechanisms, both with `main` as
 the canonical source of truth:
 
-1. **Backend Python source**: The UI checks every 10 minutes and can update
+1. **Backend Python source**: The UI checks every 15 seconds and can update
    the installed `src` Git checkout by one button press, followed by a
    managed backend restart. No signing keys are required for this path.
 2. **Compiled Windows Desktop UI**: The existing Tauri updater can replace
