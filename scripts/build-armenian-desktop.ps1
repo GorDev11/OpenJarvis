@@ -31,7 +31,7 @@ Assert-Command "npx.cmd"
 Assert-Command "cargo"
 Assert-Command "rustc"
 if (-not (Test-Path $previewConfig)) {
-    throw "Preview Tauri config missing. Pull feature/armenian-voice first."
+    throw "Preview Tauri config missing. Sync the main branch and retry."
 }
 $branch = (& git branch --show-current 2>$null).Trim()
 if ($branch -ne "main") {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
-type UpdateState = 'idle' | 'available' | 'downloading' | 'ready' | 'error';
+type UpdateState = 'idle' | 'available' | 'downloading' | 'syncing' | 'installing' | 'ready' | 'error';
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const DISABLED_KEY = 'oj-auto-update-disabled';
@@ -72,13 +72,18 @@ export function UpdateChecker() {
 
     setState('downloading');
     setProgress(0);
+    setErrorMsg('');
 
     try {
       let downloaded = 0;
-      const contentLength = update.contentLength ?? 0;
+      let contentLength = 0;
 
-      await update.downloadAndInstall((event: any) => {
-        if (event.event === 'Progress') {
+      // Download and verify the signed binary before mutating the source.
+      // Tauri's Windows install() exits the app, so sync must happen first.
+      await update.download((event: any) => {
+        if (event.event === 'Started') {
+          contentLength = event.data?.contentLength ?? 0;
+        } else if (event.event === 'Progress') {
           downloaded += event.data?.chunkLength ?? 0;
           if (contentLength > 0) {
             setProgress(Math.min(100, Math.round((downloaded / contentLength) * 100)));
@@ -88,10 +93,7 @@ export function UpdateChecker() {
         }
       });
 
-      // The signed desktop binary and Python backend source are two separate
-      // installations. A single explicit Update click should advance both.
-      // Keep the binary update successful even if the source checkout has
-      // local edits or the network changed during the Git operation.
+      setState('syncing');
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const source = await invoke<{
@@ -100,15 +102,19 @@ export function UpdateChecker() {
         if (source.update_available && source.can_update) {
           await invoke('apply_main_update', { expectedSha: source.latest_sha });
         } else if (source.update_available) {
-          setErrorMsg('Desktop updated; backend source has local changes and needs review.');
+          setErrorMsg('Desktop update ready; backend source has local changes and needs review.');
         }
       } catch (syncError) {
-        setErrorMsg('Desktop updated; backend source sync did not finish: ' + String(syncError));
+        // A dirty or offline Git checkout must not block a verified Desktop update.
+        setErrorMsg('Desktop update ready; backend source sync did not finish: ' + String(syncError));
       }
 
+      setState('installing');
+      await update.install();
+      // Windows quits during install. Other platforms can relaunch manually.
       setState('ready');
     } catch (e: any) {
-      setErrorMsg(e?.message || 'Download failed');
+      setErrorMsg(e?.message || 'Download or installation failed');
       setState('error');
       setTimeout(() => setState('idle'), 5000);
     }
@@ -139,7 +145,7 @@ export function UpdateChecker() {
         <div style={styles.row}>
           <span>Update available: <strong>v{version}</strong></span>
           <div style={styles.actions}>
-            <button style={styles.primaryBtn} onClick={handleDownload}>Download</button>
+            <button style={styles.primaryBtn} onClick={handleDownload}>Թարմացնել / Update</button>
             <button style={styles.secondaryBtn} onClick={() => setDismissed(true)}>Later</button>
             <button style={styles.muteBtn} onClick={handleDisable}>Disable auto-updates</button>
           </div>
@@ -152,6 +158,13 @@ export function UpdateChecker() {
           <div style={styles.progressBar}>
             <div style={{ ...styles.progressFill, width: `${progress}%` }} />
           </div>
+        </div>
+      )}
+
+      {(state === 'syncing' || state === 'installing') && (
+        <div style={styles.row}>
+          <span>{state === 'syncing' ? 'Թարմացվում է GitHub main-ի Backend-ը...' : 'Տեղադրվում է ստորագրված Desktop թարմացումը...'}</span>
+          {errorMsg && <span style={{ color: '#f9e2af', fontSize: 12 }}>{errorMsg}</span>}
         </div>
       )}
 

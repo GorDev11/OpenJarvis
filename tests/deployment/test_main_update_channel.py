@@ -55,3 +55,24 @@ def test_unsigned_preview_never_installs_unsigned_desktop_update() -> None:
     assert "desktop-main/latest.json" in workflow
     assert "frontend/**" in workflow
     assert "github.com/open-jarvis/OpenJarvis" not in workflow
+
+
+def test_signed_desktop_update_downloads_then_syncs_then_installs() -> None:
+    """On Windows Tauri exits during install; backend sync must precede it."""
+    source = (FRONTEND / "UpdateChecker.tsx").read_text(encoding="utf-8")
+    handler = source.split("const handleDownload = useCallback", 1)[1].split(
+        "const handleRelaunch = useCallback", 1
+    )[0]
+    assert "await update.download(" in handler
+    assert "'check_main_update'" in handler
+    assert "'apply_main_update'" in handler
+    assert "await update.install()" in handler
+    assert "downloadAndInstall" not in handler
+    assert (
+        handler.index("await update.download(")
+        < handler.index("'check_main_update'")
+        < handler.index("'apply_main_update'")
+        < handler.index("await update.install()")
+    )
+    assert "event.event === 'Started'" in handler
+    assert "event.data?.contentLength" in handler
