@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Download, RefreshCw, CheckCircle2, AlertTriangle, LoaderCircle, X } from 'lucide-react';
 import { isTauri } from '../../lib/api';
 
 // Direct GitHub WebSockets are unavailable to installed clients; use fast, bounded polling.
@@ -15,7 +15,7 @@ export type MainSourceStatus = {
   message: string;
 };
 
-type Phase = 'idle' | 'checking' | 'available' | 'updating' | 'updated' | 'error';
+type Phase = 'idle' | 'checking' | 'available' | 'updating' | 'restarting' | 'updated' | 'error';
 
 /** Check and apply the user's GorDev11/OpenJarvis main Python backend update.
  * This does not silently install unsigned desktop executables.
@@ -81,24 +81,54 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
     };
   }, [check]);
 
+  useEffect(() => {
+    if (!isTauri()) return;
+    const onReady = () => {
+      if (!updating.current) return;
+      updating.current = false;
+      setPhase(prev => prev === 'updating' || prev === 'restarting' ? 'updated' : prev);
+    };
+    const onTimeout = () => {
+      if (!updating.current) return;
+      updating.current = false;
+      setError('Backend-ի վերագործարկումը երկար է տևում։ Ստուգիր կապը կամ Logs-ը։');
+      setPhase('error');
+    };
+    window.addEventListener('openjarvis-backend-ready', onReady);
+    window.addEventListener('openjarvis-backend-timeout', onTimeout);
+    return () => {
+      window.removeEventListener('openjarvis-backend-ready', onReady);
+      window.removeEventListener('openjarvis-backend-timeout', onTimeout);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'updated') return;
+    const timer = window.setTimeout(() => setDismissed(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
+
   const update = useCallback(async () => {
-    if (!status?.can_update || phase === 'updating') return;
+    if (!status?.can_update || updating.current) return;
     updating.current = true;
+    setDismissed(false);
     setPhase('updating');
     setError('');
+    window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'updating' }));
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke<string>('apply_main_update', { expectedSha: status.latest_sha });
-      setPhase('updated');
       try { localStorage.removeItem(DISMISSED_KEY); } catch { /* private mode */ }
       setStatus(prev => prev ? { ...prev, current_sha: prev.latest_sha, branch: 'main', update_available: false } : prev);
+      setPhase('restarting');
     } catch (e) {
       setError(String(e));
       setPhase('error');
     } finally {
-      updating.current = false;
+      // Native apply can return before the managed Python backend is healthy.
+      window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'waiting' }));
     }
-  }, [status, phase]);
+  }, [status]);
 
   if (!isTauri()) return null;
 
@@ -120,10 +150,10 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
           Ավտոմատ ստուգում՝ յուրաքանչյուր 15 վայրկյանը մեկ
         </span>
         {status?.update_available && (
-          <button type="button" onClick={() => void update()} disabled={!status.can_update || phase === 'updating'}
+          <button type="button" onClick={() => void update()} disabled={!status.can_update || updating.current}
             className="rounded-lg border px-3 py-1.5 flex items-center gap-1.5"
             style={{ borderColor: 'var(--color-accent)', color: 'var(--color-text)' }}>
-            <Download size={12} /> {phase === 'updating' ? 'Թարմացվում է...' : 'Թարմացնել / Update'}
+            <Download size={12} /> {phase === 'updating' || phase === 'restarting' ? 'Թարմացվում է...' : 'Թարմացնել / Update'}
           </button>
         )}
         <span style={{ color: 'var(--color-text-tertiary)' }}>
@@ -132,12 +162,13 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
         </span>
         {lastCheckedAt && <span style={{ color: 'var(--color-text-tertiary)' }}>Ստուգվել է՝ {lastCheckedAt}</span>}
         {status && <span style={{ color: 'var(--color-text-secondary)' }}>{status.message}</span>}
+        {(phase === 'updating' || phase === 'restarting') && <span>Backend-ը վերագործարկվում է...</span>}
         {error && <span role="alert" style={{ color: 'var(--color-error)' }}>{error}</span>}
       </div>
     );
   }
 
-  if (dismissed || (phase !== 'available' && phase !== 'updating' && phase !== 'updated' && phase !== 'error')) {
+  if (dismissed || (phase !== 'available' && phase !== 'updating' && phase !== 'restarting' && phase !== 'updated' && phase !== 'error')) {
     return null;
   }
 
