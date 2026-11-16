@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from unittest.mock import MagicMock
+
+import pytest
 
 from openjarvis.agents._stubs import AgentContext
 from openjarvis.agents.orchestrator import OrchestratorAgent
 from openjarvis.core.events import EventBus, EventType
 from openjarvis.core.types import Conversation, Message, Role, ToolResult
+from openjarvis.engine._stubs import StreamChunk
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 
 # ---------------------------------------------------------------------------
@@ -167,6 +171,130 @@ class TestOrchestratorAgent:
         assert result.content == "Hello!"
         assert result.turns == 1
         assert result.tool_results == []
+
+    @pytest.mark.asyncio
+    async def test_live_stream_uses_engine_stream_full(self):
+        engine = MagicMock()
+        engine.engine_id = "mock"
+
+        async def stream_full(*args, **kwargs):  # noqa: ANN002, ANN003
+            yield StreamChunk(content="Hello")
+            yield StreamChunk(content=" world")
+            yield StreamChunk(
+                finish_reason="stop",
+                usage={
+                    "prompt_tokens": 4,
+                    "completion_tokens": 2,
+                    "total_tokens": 6,
+                },
+            )
+
+        engine.stream_full = stream_full
+        engine.generate.side_effect = AssertionError("generate() must not replay")
+        deltas: list[str] = []
+
+        result = await asyncio.to_thread(
+            OrchestratorAgent(engine, "test-model").run,
+            "Hi",
+            stream_callback=deltas.append,
+            stream_event_loop=asyncio.get_running_loop(),
+        )
+
+        assert deltas == ["Hello", " world"]
+        assert result.content == "Hello world"
+        assert result.metadata["total_tokens"] == 6
+        engine.generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_live_stream_merges_tool_fragments_then_streams_grounded_answer(
+        self,
+    ):
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        stream_calls = 0
+
+        async def stream_full(*args, **kwargs):  # noqa: ANN002, ANN003
+            nonlocal stream_calls
+            stream_calls += 1
+            if stream_calls == 1:
+                yield StreamChunk(
+                    tool_calls=[
+                        {
+                            "index": 0,
+                            "id": "calc-1",
+                            "function": {
+                                "name": "calculator",
+                                "arguments": '{"expression":',
+                            },
+                        }
+                    ]
+                )
+                yield StreamChunk(
+                    tool_calls=[
+                        {
+                            "index": 0,
+                            "function": {"arguments": '"2+2"}'},
+                        }
+                    ],
+                    finish_reason="tool_calls",
+                )
+            else:
+                yield StreamChunk(content="The answer is ")
+                yield StreamChunk(content="4.", finish_reason="stop")
+
+        engine.stream_full = stream_full
+        deltas: list[str] = []
+        agent = OrchestratorAgent(
+            engine,
+            "test-model",
+            tools=[_CalculatorStub()],
+        )
+
+        result = await asyncio.to_thread(
+            agent.run,
+            "Calculate 2+2",
+            stream_callback=deltas.append,
+            stream_event_loop=asyncio.get_running_loop(),
+        )
+
+        assert deltas == ["The answer is ", "4."]
+        assert result.content == "The answer is 4."
+        assert result.tool_results[0].content == "4"
+        assert stream_calls == 2
+
+    def test_repeated_final_response_is_collapsed(self):
+        sentence = "The requested diagnostic completed without any errors."
+        engine = _make_engine_no_tools(" ".join([sentence] * 3))
+
+        result = OrchestratorAgent(engine, "test-model").run("Diagnose it")
+
+        assert result.content == sentence
+        assert result.metadata["response_loop_blocked"] is True
+
+    @pytest.mark.asyncio
+    async def test_live_stream_stops_single_chunk_repetition_before_delivery(self):
+        sentence = "The requested diagnostic completed without any errors."
+        engine = MagicMock()
+        engine.engine_id = "mock"
+
+        async def stream_full(*args, **kwargs):  # noqa: ANN002, ANN003
+            yield StreamChunk(
+                content=" ".join([sentence] * 3),
+                finish_reason="stop",
+            )
+
+        engine.stream_full = stream_full
+        deltas: list[str] = []
+        result = await asyncio.to_thread(
+            OrchestratorAgent(engine, "test-model").run,
+            "Diagnose it",
+            stream_callback=deltas.append,
+            stream_event_loop=asyncio.get_running_loop(),
+        )
+
+        assert deltas == [sentence]
+        assert result.content == sentence
+        assert result.metadata["response_loop_blocked"] is True
 
     def test_single_tool_call(self):
         engine = _make_engine_with_tool_call()

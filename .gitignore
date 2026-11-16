@@ -42,6 +42,10 @@ Thumbs.db
 # ...but keep checked-in example/templates (never contain real secrets)
 !.env.example
 !**/.env.example
+# Build-mode flag only; contains no credentials.  It must ship with the
+# dedicated preview configuration so preview installers cannot inherit the
+# stable updater channel.
+!frontend/.env.armenian-preview
 
 # Project
 *.sqlite

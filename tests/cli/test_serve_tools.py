@@ -49,7 +49,14 @@ def test_agent_tools_remains_a_backward_compatible_fallback():
 def test_serve_defaults_tools_when_no_selection_is_configured():
     allowed, explicit = _resolve_allowed_tools(JarvisConfig())
 
-    assert allowed == {"think", "calculator", "web_search"}
+    assert allowed == {
+        "think",
+        "calculator",
+        "web_search",
+        "network_diagnostics",
+        "system_diagnostics",
+        "shell_exec",
+    }
     assert explicit is False
 
 

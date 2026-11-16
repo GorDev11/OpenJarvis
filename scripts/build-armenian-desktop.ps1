@@ -34,8 +34,17 @@ if (-not (Test-Path $previewConfig)) {
     throw "Preview Tauri config missing. Pull feature/armenian-voice first."
 }
 $branch = (& git branch --show-current 2>$null).Trim()
-if ($branch -ne "feature/armenian-voice") {
-    throw "Expected feature/armenian-voice branch, found '$branch'."
+$isPreviewLineage = $branch -eq "feature/armenian-voice"
+foreach ($previewRef in @("feature/armenian-voice", "origin/feature/armenian-voice")) {
+    if ($isPreviewLineage) { break }
+    & git rev-parse --verify --quiet $previewRef *> $null
+    if ($LASTEXITCODE -eq 0) {
+        & git merge-base --is-ancestor $previewRef HEAD
+        $isPreviewLineage = $LASTEXITCODE -eq 0
+    }
+}
+if (-not $isPreviewLineage) {
+    throw "Branch '$branch' is not based on feature/armenian-voice. Pull that branch first."
 }
 Write-Host ("Node: " + ((& node --version) -join ""))
 Write-Host ("npm: " + ((& npm.cmd --version) -join ""))

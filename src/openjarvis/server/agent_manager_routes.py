@@ -20,6 +20,7 @@ from openjarvis.agents.tool_resolver import (
 from openjarvis.agents.tool_resolver import (
     ensure_registries_populated as _ensure_registries_populated,
 )
+from openjarvis.security.confirmation import desktop_tool_confirmation
 from openjarvis.server.model_capabilities import is_embed_only_model
 
 try:
@@ -1029,7 +1030,7 @@ async def _stream_managed_agent(
                     max_turns=int(config.get("max_turns", 8)),
                     temperature=float(config.get("temperature", 0.3)),
                     interactive=True,
-                    confirm_callback=lambda _prompt: True,
+                    confirm_callback=desktop_tool_confirmation,
                 )
                 if resolved_toolkit.mcp_clients:
                     dr_agent._mcp_clients = resolved_toolkit.mcp_clients
@@ -1318,7 +1319,7 @@ async def _stream_managed_agent(
         tools=resolved_toolkit.instances,
         bus=bus,
         interactive=True,
-        confirm_callback=lambda _prompt: True,
+        confirm_callback=desktop_tool_confirmation,
         capability_policy=getattr(app_state, "capability_policy", None),
         rate_limiter=getattr(app_state, "rate_limiter", None),
         agent_id=agent_id,
@@ -1889,7 +1890,7 @@ def create_agent_manager_router(
                                     ),
                                     agent_id=agent_id,
                                     interactive=True,
-                                    confirm_callback=lambda _prompt: True,
+                                    confirm_callback=desktop_tool_confirmation,
                                 )
 
                                 def handler(text: str) -> str:
@@ -1972,7 +1973,7 @@ def create_agent_manager_router(
                                     ),
                                     agent_id=agent_id,
                                     interactive=True,
-                                    confirm_callback=lambda _prompt: True,
+                                    confirm_callback=desktop_tool_confirmation,
                                 )
                         bus = getattr(request.app.state, "bus", None)
                         if bus is None:
@@ -2144,33 +2145,7 @@ def create_agent_manager_router(
                         trace_store=_ts2,
                     )
 
-                    # OPENJARVIS_DESKTOP_CONFIRM_PATCH_START
-                    # For Desktop Interact -> Ask, require a fresh Windows
-                    # Yes/No decision per sensitive tool invocation.
-                    # Deny by default (including on errors and non-Windows).
-                    def _openjarvis_desktop_confirm(prompt):
-                        import sys
-
-                        if sys.platform != "win32":
-                            return False
-                        try:
-                            import ctypes
-
-                            flags = 0x00000004 | 0x00000030 | 0x00000100 | 0x00040000
-                            answer = ctypes.windll.user32.MessageBoxW(
-                                None,
-                                "OpenJarvis requests a sensitive action:\n\n"
-                                + str(prompt)
-                                + "\n\nAllow this action?",
-                                "OpenJarvis - Confirm tool execution",
-                                flags,
-                            )
-                            return answer == 6  # IDYES. No/close deny.
-                        except Exception:
-                            return False
-
-                    executor._confirm_callback = _openjarvis_desktop_confirm
-                    # OPENJARVIS_DESKTOP_CONFIRM_PATCH_END
+                    executor._confirm_callback = desktop_tool_confirmation
                     system = _make_lightweight_system(
                         _srv_engine,
                         _srv_model,

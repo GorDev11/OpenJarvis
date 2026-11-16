@@ -26,7 +26,16 @@ from openjarvis.intelligence import (
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_TOOLS = frozenset({"think", "calculator", "web_search", "network_diagnostics"})
+_DEFAULT_TOOLS = frozenset(
+    {
+        "think",
+        "calculator",
+        "web_search",
+        "network_diagnostics",
+        "system_diagnostics",
+        "shell_exec",
+    }
+)
 
 
 def _resolve_server_cors_origins(configured: object) -> list[str]:
@@ -323,6 +332,8 @@ def serve(
 
     if agent_key:
         try:
+            import inspect as _inspect
+
             import openjarvis.agents  # noqa: F401
             from openjarvis.core.registry import AgentRegistry
 
@@ -375,11 +386,31 @@ def serve(
 
                     if tools:
                         agent_kwargs["tools"] = tools
+                    from openjarvis.security.confirmation import (
+                        desktop_tool_confirmation,
+                        is_desktop_runtime,
+                    )
+
+                    if is_desktop_runtime():
+                        # Sensitive tools (notably shell_exec) remain behind a
+                        # fresh native Yes/No decision for every invocation.
+                        agent_kwargs["interactive"] = True
+                        agent_kwargs["confirm_callback"] = desktop_tool_confirmation
                     # Reuse these for the scheduler's ToolExecutor (#263).
                     resolved_tools = tools
 
                 if getattr(agent_cls, "accepts_tools", False):
                     agent_kwargs["max_turns"] = config.agent.max_turns
+
+                if (
+                    "engine_options"
+                    in _inspect.signature(agent_cls.__init__).parameters
+                ):
+                    agent_kwargs["engine_options"] = {
+                        "top_p": config.intelligence.top_p,
+                        "top_k": config.intelligence.top_k,
+                        "repetition_penalty": (config.intelligence.repetition_penalty),
+                    }
 
                 from openjarvis.security.runtime import agent_security_kwargs
 
@@ -399,8 +430,6 @@ def serve(
                 # assistant while the same agent via the CLI kept its persona.
                 # Guarded so agents with specialized prompt machinery must opt
                 # in by explicitly naming and forwarding the kwarg.
-                import inspect as _inspect
-
                 if (
                     "prompt_builder"
                     in _inspect.signature(agent_cls.__init__).parameters

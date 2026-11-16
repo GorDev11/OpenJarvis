@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-from collections import deque
+import re
+from collections import Counter, deque
 from dataclasses import dataclass
 from typing import Optional
 
@@ -20,6 +21,8 @@ class LoopGuardConfig:
     poll_tool_budget: int = 5  # max calls to same polling tool
     max_context_messages: int = 100  # context overflow threshold
     warn_before_block: bool = True  # warn on first cycle, block on second
+    max_response_repetitions: int = 3
+    min_response_segment_chars: int = 24
 
 
 @dataclass(slots=True)
@@ -53,6 +56,9 @@ class LoopGuard:
         self._per_tool_counts: dict[str, int] = {}
         # Track cycle keys that have already been warned (for warn-before-block)
         self._warned_cycles: set[str] = set()
+        # Keep audit/event subscribers from receiving the same trigger on every
+        # subsequent token or retry in one run.
+        self._emitted_triggers: set[tuple[str, str]] = set()
 
         try:
             from openjarvis._rust_bridge import get_rust_module
@@ -85,7 +91,9 @@ class LoopGuard:
 
         # Wrap with warn-before-block logic
         if verdict.blocked and self._config.warn_before_block:
-            cycle_key = verdict.reason
+            # Counts grow on every retry; normalize them so one repeated cycle
+            # gets one warning and the next occurrence is actually blocked.
+            cycle_key = re.sub(r"\d+", "#", verdict.reason)
             if cycle_key not in self._warned_cycles:
                 self._warned_cycles.add(cycle_key)
                 return LoopVerdict(blocked=False, warned=True, reason=verdict.reason)
@@ -96,7 +104,7 @@ class LoopGuard:
         # 1. Hash tracking — identical calls
         call_hash = hashlib.sha256(f"{tool_name}:{arguments}".encode()).hexdigest()[:16]
         self._call_counts[call_hash] = self._call_counts.get(call_hash, 0) + 1
-        if self._call_counts[call_hash] > self._config.max_identical_calls:
+        if self._call_counts[call_hash] >= self._config.max_identical_calls:
             self._emit_triggered("identical_call", tool_name)
             return LoopVerdict(
                 blocked=True,
@@ -132,8 +140,97 @@ class LoopGuard:
         return LoopVerdict()
 
     def check_response(self, content: str) -> LoopVerdict:
-        """Check whether an agent response indicates a loop. Reserved for future use."""
+        """Detect repeated sentence/paragraph or word-tail generation loops."""
+
+        segments = self._response_segments(content)
+        counts = Counter(normalized for _, normalized in segments)
+        for normalized, count in counts.items():
+            if count >= self._config.max_response_repetitions:
+                self._emit_triggered("response_repetition", "response")
+                return LoopVerdict(
+                    blocked=True,
+                    reason=(
+                        f"Response segment repeated {count} times: {normalized[:80]!r}."
+                    ),
+                )
+
+        repeated_tail = self._repeated_word_tail(content)
+        if repeated_tail is not None:
+            period, repeats = repeated_tail
+            self._emit_triggered("response_repetition", "response")
+            return LoopVerdict(
+                blocked=True,
+                reason=(
+                    "Response entered a repeated word pattern "
+                    f"({period} words x {repeats})."
+                ),
+            )
         return LoopVerdict()
+
+    def deduplicate_response(self, content: str) -> str:
+        """Collapse only segments that crossed the configured loop threshold."""
+
+        pieces = re.split(r"(\n{2,}|(?<=[.!?։])\s+)", content)
+        normalized_pieces = [
+            self._normalize_response_segment(piece) if index % 2 == 0 else ""
+            for index, piece in enumerate(pieces)
+        ]
+        counts = Counter(value for value in normalized_pieces if value)
+        emitted: set[str] = set()
+        output: list[str] = []
+        for index, piece in enumerate(pieces):
+            normalized = normalized_pieces[index]
+            if (
+                normalized
+                and counts[normalized] >= self._config.max_response_repetitions
+            ):
+                if normalized in emitted:
+                    continue
+                emitted.add(normalized)
+            output.append(piece)
+
+        collapsed = "".join(output).strip()
+        repeated_tail = self._repeated_word_tail(collapsed)
+        if repeated_tail is not None:
+            period, repeats = repeated_tail
+            words = collapsed.split()
+            keep = len(words) - period * (repeats - 1)
+            collapsed = " ".join(words[:keep]).strip()
+        return collapsed or content.strip()
+
+    def _response_segments(self, content: str) -> list[tuple[str, str]]:
+        raw_segments = re.split(r"\n{2,}|(?<=[.!?։])\s+", content)
+        segments = []
+        for raw in raw_segments:
+            normalized = self._normalize_response_segment(raw)
+            if normalized:
+                segments.append((raw, normalized))
+        return segments
+
+    def _normalize_response_segment(self, segment: str) -> str:
+        normalized = " ".join(segment.casefold().split()).strip(" -_*`#")
+        if len(normalized) < self._config.min_response_segment_chars:
+            return ""
+        return normalized
+
+    def _repeated_word_tail(self, content: str) -> Optional[tuple[int, int]]:
+        words = " ".join(content.casefold().split()).split()
+        minimum_repeats = self._config.max_response_repetitions
+        max_period = min(80, len(words) // minimum_repeats)
+        for period in range(4, max_period + 1):
+            unit = words[-period:]
+            if len(" ".join(unit)) < self._config.min_response_segment_chars:
+                continue
+            repeats = 1
+            while len(words) >= period * (repeats + 1):
+                start = len(words) - period * (repeats + 1)
+                end = start + period
+                if words[start:end] != unit:
+                    break
+                repeats += 1
+            if repeats >= minimum_repeats:
+                return period, repeats
+        return None
 
     @staticmethod
     def _is_system(msg: object) -> bool:
@@ -215,6 +312,7 @@ class LoopGuard:
         self._tool_sequence.clear()
         self._per_tool_counts.clear()
         self._warned_cycles.clear()
+        self._emitted_triggers.clear()
         if self._rust_impl is not None:
             self._rust_impl.reset()
 
@@ -233,6 +331,10 @@ class LoopGuard:
 
     def _emit_triggered(self, reason_type: str, tool_name: str) -> None:
         """Publish a LOOP_GUARD_TRIGGERED event."""
+        trigger_key = (reason_type, tool_name)
+        if trigger_key in self._emitted_triggers:
+            return
+        self._emitted_triggers.add(trigger_key)
         if self._bus:
             self._bus.publish(
                 EventType.LOOP_GUARD_TRIGGERED,

@@ -143,7 +143,7 @@ fn boot_plan(cfg: &InferenceConfig, ram_gb: f64) -> BootPlan {
                     "--model".into(),
                     model,
                     "--agent".into(),
-                    "simple".into(),
+                    "orchestrator".into(),
                 ],
             }
         }
@@ -174,7 +174,7 @@ fn boot_plan(cfg: &InferenceConfig, ram_gb: f64) -> BootPlan {
                     "--model".into(),
                     model,
                     "--agent".into(),
-                    "simple".into(),
+                    "orchestrator".into(),
                 ],
             }
         }
@@ -1610,6 +1610,9 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     // additions aren't accidentally stripped.
     prepare_subprocess_for_appimage(&mut cmd);
     prepare_backend_python(&mut cmd);
+    // Only this trusted launcher may enable native per-tool confirmation in
+    // the Python backend. Browser/headless servers stay fail-closed.
+    cmd.env("OPENJARVIS_DESKTOP", "1");
 
     // Inject cloud API keys from secure desktop storage.
     for (key, value) in cloud_keys_for_inference(&cfg) {
@@ -3905,6 +3908,10 @@ mod tests {
             .serve_args
             .windows(2)
             .any(|w| w == ["--model", "qwen3.5:4b"]));
+        assert!(plan
+            .serve_args
+            .windows(2)
+            .any(|w| w == ["--agent", "orchestrator"]));
     }
 
     #[test]
@@ -3942,6 +3949,10 @@ mod tests {
             .serve_args
             .windows(2)
             .any(|w| w == ["--model", "qwen2.5-7b"]));
+        assert!(plan
+            .serve_args
+            .windows(2)
+            .any(|w| w == ["--agent", "orchestrator"]));
     }
 
     #[test]

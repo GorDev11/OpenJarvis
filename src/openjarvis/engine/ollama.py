@@ -100,7 +100,42 @@ def _ollama_request_options(
         options["num_ctx"] = _default_num_ctx()
     if kwargs.get("num_gpu") is not None:
         options["num_gpu"] = int(kwargs["num_gpu"])
+    integer_options = ("top_k", "seed", "repeat_last_n", "num_thread")
+    for key in integer_options:
+        if kwargs.get(key) is not None:
+            options[key] = int(kwargs[key])
+    float_options = ("top_p", "min_p", "repeat_penalty")
+    for key in float_options:
+        if kwargs.get(key) is not None:
+            options[key] = float(kwargs[key])
+    # OpenJarvis config uses the provider-neutral spelling; Ollama calls the
+    # same option repeat_penalty.  An explicit native value wins.
+    if "repeat_penalty" not in options and kwargs.get("repetition_penalty") is not None:
+        options["repeat_penalty"] = float(kwargs["repetition_penalty"])
+    if kwargs.get("stop") is not None:
+        options["stop"] = kwargs["stop"]
     return options
+
+
+_TOOLS_UNSUPPORTED_MARKERS = (
+    "does not support tools",
+    "doesn't support tools",
+    "tools not supported",
+    "tool calling is not supported",
+    "tool calls are not supported",
+    "does not support tool calls",
+    "function calling not supported",
+    "does not support function calling",
+    "tool use is not supported",
+    "does not support tool use",
+)
+
+
+def _tools_are_unsupported(response_text: str) -> bool:
+    """Return whether an Ollama 400 explicitly rejects tool capability."""
+
+    normalized = " ".join((response_text or "").lower().split())
+    return any(marker in normalized for marker in _TOOLS_UNSUPPORTED_MARKERS)
 
 
 @EngineRegistry.register("ollama")
@@ -191,8 +226,10 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
                 payload["format"] = "json"
         try:
             resp = self._client.post("/api/chat", json=payload)
-            if resp.status_code == 400 and tools:
-                # Model may not support function calling -- retry without tools
+            if resp.status_code == 400 and tools and _tools_are_unsupported(resp.text):
+                # Retry only when the server explicitly says this model lacks
+                # tool capability. Invalid schemas/arguments must surface to
+                # the caller instead of silently turning an action into prose.
                 payload.pop("tools", None)
                 resp = self._client.post("/api/chat", json=payload)
             resp.raise_for_status()
@@ -418,10 +455,13 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
             client = self._get_async_client()
             async with client.stream("POST", "/api/chat", json=payload) as resp:
                 if resp.status_code == 400 and retry_without_tools:
-                    # Model doesn't support tools — retry without them.
-                    # PRESERVED: this specific 400 path must still trigger the
-                    # tools-less retry; only OTHER non-2xx responses map to
-                    # EngineConnectionError below.
+                    await resp.aread()
+                if (
+                    resp.status_code == 400
+                    and retry_without_tools
+                    and _tools_are_unsupported(resp.text)
+                ):
+                    # Only a capability rejection may drop requested tools.
                     payload.pop("tools", None)
                     async for c in self._run_stream(
                         payload, messages, retry_without_tools=False

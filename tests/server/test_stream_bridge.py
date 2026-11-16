@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from unittest.mock import MagicMock
 
 import pytest
@@ -63,6 +64,68 @@ def test_stream_replays_grounded_agent_result_without_second_inference():
     assert any(event.startswith("event: tool_results\n") for event in events)
     agent.run.assert_called_once()
     assert agent._model == "configured-model"
+
+
+def test_runner_content_is_live_and_not_duplicated():
+    agent = MagicMock()
+    agent._model = "configured-model"
+    request = ChatCompletionRequest(
+        model="requested-model",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+    )
+
+    def runner(emit_content, cancel_event):  # noqa: ANN001
+        assert cancel_event.is_set() is False
+        emit_content("live ")
+        emit_content("answer")
+        return AgentResult(content="live answer", metadata={})
+
+    bridge = AgentStreamBridge(
+        agent,
+        EventBus(),
+        request.model,
+        request,
+        runner=runner,
+    )
+
+    async def collect_events() -> list[str]:
+        return [event async for event in bridge.stream()]
+
+    events = asyncio.run(collect_events())
+    assert _streamed_content(events) == "live answer"
+
+
+def test_closing_stream_signals_worker_cancellation():
+    agent = MagicMock()
+    agent._model = "configured-model"
+    request = ChatCompletionRequest(
+        model="requested-model",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+    )
+    stopped = threading.Event()
+
+    def runner(_emit_content, cancel_event):  # noqa: ANN001
+        cancel_event.wait(timeout=2)
+        stopped.set()
+        return AgentResult(content="", metadata={})
+
+    bridge = AgentStreamBridge(
+        agent,
+        EventBus(),
+        request.model,
+        request,
+        runner=runner,
+    )
+
+    async def open_then_close() -> None:
+        stream = bridge.stream()
+        await anext(stream)  # role chunk; worker is running
+        await stream.aclose()
+        assert await asyncio.to_thread(stopped.wait, 1)
+
+    asyncio.run(open_then_close())
 
 
 def test_tool_call_start_serializes_arguments_for_sse_without_mutating_event():

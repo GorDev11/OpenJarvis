@@ -18,7 +18,21 @@ from openjarvis.core.events import EventBus, EventType
 from openjarvis.core.types import Conversation, Message, Role, ToolResult
 from openjarvis.engine._stubs import InferenceEngine
 
-_ALLOWED_ENGINE_OPTION_KEYS = frozenset({"num_ctx", "num_gpu"})
+_ALLOWED_ENGINE_OPTION_KEYS = frozenset(
+    {
+        "num_ctx",
+        "num_gpu",
+        "num_thread",
+        "top_p",
+        "top_k",
+        "min_p",
+        "seed",
+        "stop",
+        "repeat_last_n",
+        "repeat_penalty",
+        "repetition_penalty",
+    }
+)
 
 
 @dataclass(slots=True)
@@ -413,6 +427,7 @@ class ToolUsingAgent(BaseAgent):
         max_turns: Optional[int] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        engine_options: Optional[Dict[str, Any]] = None,
         loop_guard_config: Optional[Any] = None,
         capability_policy: Optional[Any] = None,
         agent_id: Optional[str] = None,
@@ -428,6 +443,7 @@ class ToolUsingAgent(BaseAgent):
             bus=bus,
             temperature=temperature,
             max_tokens=max_tokens,
+            engine_options=engine_options,
             prompt_builder=prompt_builder,
             capability_policy=capability_policy,
             rate_limiter=rate_limiter,

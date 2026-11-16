@@ -122,6 +122,35 @@ class TestLoopGuard:
         v = guard.check_response("some content")
         assert not v.blocked
 
+    def test_repeated_response_sentence_is_blocked_and_deduplicated(self):
+        guard, bus = self._make_guard(max_response_repetitions=3)
+        sentence = "The network check found no packet loss or DNS failure."
+        content = " ".join([sentence, sentence, sentence])
+
+        verdict = guard.check_response(content)
+
+        assert verdict.blocked
+        assert guard.deduplicate_response(content) == sentence
+        assert any(
+            event.event_type == EventType.LOOP_GUARD_TRIGGERED
+            and event.data["reason_type"] == "response_repetition"
+            for event in bus.history
+        )
+
+    def test_repeated_word_tail_without_punctuation_is_blocked(self):
+        guard, _ = self._make_guard(max_response_repetitions=3)
+        phrase = "checking the same endpoint without making any progress"
+
+        verdict = guard.check_response(" ".join([phrase, phrase, phrase]))
+
+        assert verdict.blocked
+        assert guard.deduplicate_response(" ".join([phrase] * 3)) == phrase
+
+    def test_two_legitimate_repeated_segments_are_allowed(self):
+        guard, _ = self._make_guard(max_response_repetitions=3)
+        sentence = "This warning is intentionally shown in two sections."
+        assert not guard.check_response(f"{sentence}\n\n{sentence}").blocked
+
     def test_disabled_loop_guard(self):
         from openjarvis.agents.loop_guard import LoopGuard, LoopGuardConfig
 

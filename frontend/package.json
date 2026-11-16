@@ -12,6 +12,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:tauri": "tsc -b && vite build --outDir dist",
+    "build:tauri:armenian-preview": "tsc -b && vite build --mode armenian-preview --outDir dist",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run"

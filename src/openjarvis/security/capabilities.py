@@ -262,6 +262,8 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "memory_retrieve": [Capability.MEMORY_READ],
     "memory_search": [Capability.MEMORY_READ],
     "memory_store": [Capability.MEMORY_WRITE],
+    # Read-only local inspection plus bounded DNS/TCP connectivity probes.
+    "network_diagnostics": [Capability.NETWORK_FETCH],
     "pause_scheduled_task": [Capability.SCHEDULE_CREATE],
     "pdf_extract": [Capability.FILE_READ],
     "queue_action": [Capability.MEMORY_WRITE],
@@ -273,6 +275,7 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "schedule_task": [Capability.SCHEDULE_CREATE],
     "shell_exec": [Capability.CODE_EXECUTE],
     "skill_manage": [Capability.FILE_READ, Capability.FILE_WRITE],
+    "system_diagnostics": [Capability.FILE_READ],
     "text_to_speech": [Capability.NETWORK_FETCH, Capability.FILE_WRITE],
     "think": [],
     "user_profile_manage": [Capability.FILE_READ, Capability.FILE_WRITE],

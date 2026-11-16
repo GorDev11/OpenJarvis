@@ -35,7 +35,11 @@ import {
   type InferenceSource,
   type MemoryStats,
 } from '../lib/api';
-import { isAutoUpdateDisabled, setAutoUpdateDisabled } from '../components/Desktop/UpdateChecker';
+import {
+  isAutoUpdateDisabled,
+  isUpdaterBuildDisabled,
+  setAutoUpdateDisabled,
+} from '../components/Desktop/UpdateChecker';
 
 const CLOUD_KEY_STATUS_CHANGED = 'openjarvis-cloud-key-status-changed';
 
@@ -295,7 +299,10 @@ export function SettingsPage() {
   const [ttsBackend, setTtsBackend] = useState<{ available: boolean; backend?: string; voice_id?: string } | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(() => !isAutoUpdateDisabled());
+  const updaterBuildDisabled = isUpdaterBuildDisabled();
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(
+    () => !isUpdaterBuildDisabled() && !isAutoUpdateDisabled(),
+  );
   const [updateCheckState, setUpdateCheckState] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
 
   const handleAutoUpdateToggle = useCallback((enabled: boolean) => {
@@ -304,6 +311,7 @@ export function SettingsPage() {
   }, []);
 
   const handleCheckNow = useCallback(async () => {
+    if (isUpdaterBuildDisabled()) return;
     if (!(window as any).__TAURI_INTERNALS__) return;
     setUpdateCheckState('checking');
     try {
@@ -921,11 +929,17 @@ export function SettingsPage() {
 
           {/* Updates */}
           <Section title="Updates">
-            <SettingRow label="Auto-update" description="Check for new desktop builds automatically every 30 minutes">
+            <SettingRow
+              label="Auto-update"
+              description={updaterBuildDisabled
+                ? 'Disabled for this isolated preview build'
+                : 'Check for new desktop builds automatically every 30 minutes'}
+            >
               <button
                 onClick={() => handleAutoUpdateToggle(!autoUpdateEnabled)}
                 className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
                 style={{ background: autoUpdateEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)' }}
+                disabled={updaterBuildDisabled}
               >
                 <span
                   className="inline-block h-3.5 w-3.5 rounded-full transition-transform"
@@ -936,18 +950,23 @@ export function SettingsPage() {
                 />
               </button>
             </SettingRow>
-            <SettingRow label="Check for updates" description="Manually check for a new version right now">
+            <SettingRow
+              label="Check for updates"
+              description={updaterBuildDisabled
+                ? 'Unavailable in Armenian Preview'
+                : 'Manually check for a new version right now'}
+            >
               <button
                 onClick={handleCheckNow}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                 style={{ background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text)', cursor: 'pointer' }}
-                disabled={updateCheckState === 'checking'}
+                disabled={updaterBuildDisabled || updateCheckState === 'checking'}
               >
                 <RefreshCw size={12} className={updateCheckState === 'checking' ? 'animate-spin' : ''} />
                 {updateCheckState === 'checking' && 'Checking...'}
                 {updateCheckState === 'available' && 'Update available — see banner above'}
                 {updateCheckState === 'latest' && 'Already up to date'}
-                {updateCheckState === 'idle' && 'Check now'}
+                {updateCheckState === 'idle' && (updaterBuildDisabled ? 'Preview channel isolated' : 'Check now')}
               </button>
             </SettingRow>
           </Section>
