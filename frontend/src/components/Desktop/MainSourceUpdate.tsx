@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { isTauri } from '../../lib/api';
 
 const CHECK_EVERY_MS = 10 * 60 * 1000;
+const DISMISSED_KEY = 'oj-main-update-dismissed-sha';
 
 export type MainSourceStatus = {
   current_sha: string;
@@ -23,17 +24,23 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   const [status, setStatus] = useState<MainSourceStatus | null>(null);
   const [error, setError] = useState('');
   const [dismissed, setDismissed] = useState(false);
+  const updating = useRef(false);
 
   const check = useCallback(async () => {
-    if (!isTauri()) return;
-    setPhase(old => old === 'updating' ? old : 'checking');
+    if (!isTauri() || updating.current) return;
+    setPhase('checking');
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const result = await invoke<MainSourceStatus>('check_main_update');
       setStatus(result);
       setError('');
       setPhase(result.update_available ? 'available' : 'idle');
-      if (result.update_available) setDismissed(false);
+      if (result.update_available) {
+        const suppressed = (() => {
+          try { return localStorage.getItem(DISMISSED_KEY) === result.latest_sha; } catch { return false; }
+        })();
+        setDismissed(suppressed);
+      }
     } catch (e) {
       const msg = String(e);
       // Only report errors when the user explicitly asks to check or when
@@ -52,20 +59,31 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
 
   const update = useCallback(async () => {
     if (!status?.can_update || phase === 'updating') return;
+    updating.current = true;
     setPhase('updating');
     setError('');
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke<string>('apply_main_update', { expectedSha: status.latest_sha });
       setPhase('updated');
+      try { localStorage.removeItem(DISMISSED_KEY); } catch { /* private mode */ }
       setStatus(prev => prev ? { ...prev, current_sha: prev.latest_sha, branch: 'main', update_available: false } : prev);
     } catch (e) {
       setError(String(e));
       setPhase('error');
+    } finally {
+      updating.current = false;
     }
   }, [status, phase]);
 
   if (!isTauri()) return null;
+
+  const dismiss = () => {
+    setDismissed(true);
+    if (status?.latest_sha) {
+      try { localStorage.setItem(DISMISSED_KEY, status.latest_sha); } catch { /* private mode */ }
+    }
+  };
 
   // Compact variant for the settings screen: provides a manual check even
   // when GitHub has no update.
@@ -76,13 +94,13 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
           className="rounded-lg border px-3 py-1.5 flex items-center gap-1.5"
           style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
           <RefreshCw size={12} className={phase === 'checking' ? 'animate-spin' : ''} />
-          Check GitHub main
+          Ստուգել GitHub main-ը
         </button>
         {status?.update_available && (
           <button type="button" onClick={() => void update()} disabled={!status.can_update || phase === 'updating'}
             className="rounded-lg border px-3 py-1.5 flex items-center gap-1.5"
             style={{ borderColor: 'var(--color-accent)', color: 'var(--color-text)' }}>
-            <Download size={12} /> {phase === 'updating' ? 'Updating...' : 'Update'}
+            <Download size={12} /> {phase === 'updating' ? 'Թարմացվում է...' : 'Թարմացնել / Update'}
           </button>
         )}
         <span style={{ color: 'var(--color-text-tertiary)' }}>
@@ -105,7 +123,7 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
         {phase === 'updated' ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
         <div>
           <div className="font-semibold">
-            {phase === 'updated' ? 'Backend source updated from GitHub main' : 'New changes available on GitHub main'}
+            {phase === 'updated' ? 'Backend-ը թարմացվեց GitHub main-ից' : 'GitHub main-ում նոր փոփոխություններ կան'}
           </div>
           <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
             {phase === 'updated'
@@ -120,13 +138,13 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
           <button type="button" onClick={() => void update()} disabled={!status.can_update}
             className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
             style={{ background: 'var(--color-accent)', color: 'var(--color-bg-primary)' }}>
-            <Download size={14} /> Update
+            <Download size={14} /> Թարմացնել / Update
           </button>
         )}
         {phase === 'updating' && <span className="text-xs">Downloading from main and restarting...</span>}
         {phase === 'updated' && <button type="button" onClick={() => void check()} className="text-xs underline">Check again</button>}
-        <button type="button" onClick={() => setDismissed(true)} aria-label="Dismiss GitHub update"
-          className="px-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Later</button>
+        <button type="button" onClick={dismiss} aria-label="Dismiss GitHub update"
+          className="px-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Ավելի ուշ</button>
       </div>
     </div>
   );
