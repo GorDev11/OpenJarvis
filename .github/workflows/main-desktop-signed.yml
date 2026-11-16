@@ -1,0 +1,118 @@
+name: OpenJarvis Main Signed Desktop Updates
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'scripts/build-armenian-desktop.ps1'
+      - '.github/workflows/main-desktop-signed.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: openjarvis-main-signed-desktop
+  cancel-in-progress: false
+
+jobs:
+  signed-windows-x64:
+    # Only release signed owner-controlled binaries.
+    if: \${{ vars.TAURI_SIGNING_PUBLIC_KEY != '' }}
+    runs-on: windows-latest
+    timeout-minutes: 100
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: \${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: \${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      TAURI_PUBLIC_KEY: \${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+      GH_TOKEN: \${{ github.token }}
+      RELEASE_TAG: desktop-main
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require signing keys
+        shell: pwsh
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw "Missing TAURI_SIGNING_PRIVATE_KEY repository secret" }
+          if (-not $env:TAURI_PUBLIC_KEY) { throw "Missing TAURI_SIGNING_PUBLIC_KEY repository variable" }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install reviewed npm
+        run: npm install --global npm@11.19.0
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm test
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri -> target
+      - name: Desktop Rust tests
+        working-directory: frontend/src-tauri
+        run: cargo test --lib --features armenian-preview
+      - name: Configure Tauri signed main channel
+        shell: pwsh
+        env:
+          BUILD_VERSION: 1.1.\${{ github.run_number }}
+        run: |
+          $config = Get-Content "frontend/src-tauri/tauri.armenian-preview.conf.json" -Raw | ConvertFrom-Json -AsHashtable
+          $config["version"] = $env:BUILD_VERSION
+          $config["bundle"]["createUpdaterArtifacts"] = $true
+          $config["build"]["beforeBuildCommand"] = "npm run build:tauri:armenian-release"
+          $config["plugins"]["updater"]["pubkey"] = $env:TAURI_PUBLIC_KEY
+          $config["plugins"]["updater"]["endpoints"] = @("https://github.com/GorDev11/OpenJarvis/releases/download/desktop-main/latest.json")
+          $config | ConvertTo-Json -Depth 30 | Set-Content "frontend/src-tauri/tauri.main-signed.generated.json" -Encoding utf8
+      - name: Build signed NSIS updater
+        working-directory: frontend
+        run: npx tauri build --bundles nsis --config src-tauri/tauri.main-signed.generated.json
+      - name: Generate latest.json
+        shell: pwsh
+        env:
+          BUILD_VERSION: 1.1.\${{ github.run_number }}
+        run: |
+          $dir = "frontend/src-tauri/target/release/bundle/nsis"
+          $zip = Get-ChildItem $dir -Filter '*.nsis.zip' -File | Select-Object -First 1
+          if (-not $zip) { throw "Missing NSIS updater zip" }
+          $signatureFile = "$($zip.FullName).sig"
+          if (-not (Test-Path $signatureFile)) { throw "Missing signature" }
+          $signature = (Get-Content $signatureFile -Raw).Trim()
+          if (-not $signature) { throw "Empty signature" }
+          $asset = [Uri]::EscapeDataString($zip.Name)
+          $url = "https://github.com/GorDev11/OpenJarvis/releases/download/$env:RELEASE_TAG/$asset"
+          $manifest = @{
+            version = $env:BUILD_VERSION
+            notes = "OpenJarvis main $env:GITHUB_SHA"
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{
+              'windows-x86_64' = @{
+                signature = $signature
+                url = $url
+              }
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 10 | Set-Content "$dir/latest.json" -Encoding utf8
+      - name: Publish owner-signed rolling release
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="frontend/src-tauri/target/release/bundle/nsis"
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "OpenJarvis Main Desktop" --notes "Signed, opt-in desktop updates from main." --prerelease
+          fi
+          shopt -s nullglob
+          archives=("$dir"/*.nsis.zip)
+          if [ "\${#archives[@]}" -ne 1 ]; then echo "::error::Missing updater archive"; exit 1; fi
+          archive="\${archives[0]}"
+          gh release upload "$RELEASE_TAG" "$archive" "$archive.sig" --repo "$GITHUB_REPOSITORY" --clobber
+          installers=("$dir"/*.exe)
+          if [ "\${#installers[@]}" -gt 0 ]; then
+            gh release upload "$RELEASE_TAG" "\${installers[0]}" --repo "$GITHUB_REPOSITORY" --clobber
+          fi
+          # Latest manifest is uploaded last to avoid broken asset references.
+          gh release upload "$RELEASE_TAG" "$dir/latest.json" --repo "$GITHUB_REPOSITORY" --clobber
