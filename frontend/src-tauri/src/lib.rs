@@ -3730,7 +3730,7 @@ mod tests {
         assert_eq!(
             manual_clone_command(
                 "https://github.com/GorDev11/OpenJarvis.git",
-                Some("feature/armenian-voice"),
+                Some("main"),
                 target,
             ),
             "git clone --depth 1 --branch main --single-branch \
