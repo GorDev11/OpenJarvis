@@ -6,6 +6,7 @@ import ast
 import json
 import logging
 import operator
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -262,6 +263,15 @@ class ToolTemplate(BaseTool):
                 tool_name=self._name,
                 content="Empty command.",
                 success=False,
+            )
+        # ``echo`` is a cmd.exe built-in on Windows, not an executable. Handle
+        # its literal-argument semantics directly so we keep shell=False and
+        # do not reintroduce command injection through template parameters.
+        if os.name == "nt" and argv[0].casefold() == "echo":
+            return ToolResult(
+                tool_name=self._name,
+                content=" ".join(argv[1:]),
+                success=True,
             )
         result = subprocess.run(  # noqa: S603
             argv,
