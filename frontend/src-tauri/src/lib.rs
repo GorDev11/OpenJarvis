@@ -15,6 +15,16 @@ const DESKTOP_UV_SYNC_COMMAND: &str =
 const DESKTOP_UV_SYNC_COMMAND: &str =
     "uv sync --python cpython-3.12-windows-x86_64-none --extra desktop --extra inference-cloud --extra inference-google --group desktop-native";
 
+#[cfg(feature = "armenian-preview")]
+const DESKTOP_SOURCE_REPOSITORY: &str = "https://github.com/GorDev11/OpenJarvis.git";
+#[cfg(not(feature = "armenian-preview"))]
+const DESKTOP_SOURCE_REPOSITORY: &str = "https://github.com/open-jarvis/OpenJarvis.git";
+#[cfg(feature = "armenian-preview")]
+const DESKTOP_SOURCE_BRANCH: Option<&str> = Some("feature/armenian-voice");
+#[cfg(not(feature = "armenian-preview"))]
+const DESKTOP_SOURCE_BRANCH: Option<&str> = None;
+const INSTALL_SCOPED_BACKEND: bool = cfg!(feature = "armenian-preview");
+
 /// Small, fast model used when startup needs a default Ollama tag.
 const STARTUP_MODEL: &str = "qwen3.5:4b";
 
@@ -304,6 +314,13 @@ fn find_project_root() -> Option<std::path::PathBuf> {
         }
     }
 
+    // The Armenian Preview is an isolated distribution. If its checkout is
+    // absent, let first-launch provisioning restore the matching branch next
+    // to the executable instead of silently adopting an unrelated old clone.
+    if INSTALL_SCOPED_BACKEND {
+        return None;
+    }
+
     // 3. Fallback: well-known direct paths
     let home = home_dir();
     let direct = [
@@ -363,6 +380,50 @@ fn find_project_root() -> Option<std::path::PathBuf> {
     }
 
     None
+}
+
+fn clone_target_for_distribution(
+    executable: Option<&std::path::Path>,
+    home: &std::path::Path,
+    install_scoped: bool,
+) -> std::path::PathBuf {
+    if install_scoped {
+        if let Some(executable_dir) = executable.and_then(std::path::Path::parent) {
+            return executable_dir.join("src");
+        }
+    }
+
+    home.join("OpenJarvis")
+}
+
+fn default_clone_target() -> std::path::PathBuf {
+    let executable = std::env::current_exe().ok();
+    let home = std::path::PathBuf::from(home_dir());
+    clone_target_for_distribution(executable.as_deref(), &home, INSTALL_SCOPED_BACKEND)
+}
+
+fn git_clone_args(repository: &str, branch: Option<&str>, target: &std::path::Path) -> Vec<String> {
+    let mut args = vec!["clone".into(), "--depth".into(), "1".into()];
+    if let Some(branch) = branch {
+        args.extend(["--branch".into(), branch.into(), "--single-branch".into()]);
+    }
+    args.push(repository.into());
+    args.push(target.display().to_string());
+    args
+}
+
+fn manual_clone_command(
+    repository: &str,
+    branch: Option<&str>,
+    target: &std::path::Path,
+) -> String {
+    let branch_args = branch
+        .map(|branch| format!(" --branch {branch} --single-branch"))
+        .unwrap_or_default();
+    format!(
+        "git clone --depth 1{branch_args} {repository} \"{}\"",
+        target.display()
+    )
 }
 
 fn project_root_near_executable(exe: &std::path::Path) -> Option<std::path::PathBuf> {
@@ -1296,8 +1357,18 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             return;
         }
 
-        let target_path = std::path::PathBuf::from(home_dir()).join("OpenJarvis");
+        let target_path = default_clone_target();
         let clone_target = target_path.display().to_string();
+        let clone_args = git_clone_args(
+            DESKTOP_SOURCE_REPOSITORY,
+            DESKTOP_SOURCE_BRANCH,
+            &target_path,
+        );
+        let manual_clone = manual_clone_command(
+            DESKTOP_SOURCE_REPOSITORY,
+            DESKTOP_SOURCE_BRANCH,
+            &target_path,
+        );
 
         // If the directory exists but is not a valid project, don't overwrite
         if target_path.exists() && !target_path.join("pyproject.toml").exists() {
@@ -1317,13 +1388,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 
         let mut clone_cmd = tokio::process::Command::new(&git_bin);
         clone_cmd
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                "https://github.com/open-jarvis/OpenJarvis.git",
-                &clone_target,
-            ])
+            .args(&clone_args)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped());
         prepare_subprocess_for_appimage(&mut clone_cmd);
@@ -1339,9 +1404,9 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     let mut s = status.lock().await;
                     s.error = Some(format!(
                         "Failed to download OpenJarvis: {}. \
-                         Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
+                         Clone manually: {}",
                         stderr.trim(),
-                        clone_target,
+                        manual_clone,
                     ));
                     return;
                 }
@@ -1349,8 +1414,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     let mut s = status.lock().await;
                     s.error = Some(format!(
                         "Failed to download OpenJarvis: {}. \
-                         Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
-                        e, clone_target,
+                         Clone manually: {}",
+                        e, manual_clone,
                     ));
                     return;
                 }
@@ -3498,9 +3563,10 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        boot_plan, default_local_model, discard_pending_inference_setup_at,
-        format_extension_import_failure, format_missing_rust_toolchain, format_port_unavailable,
-        format_uv_sync_failure, format_uv_sync_spawn_error, managed_cloud_key_names,
+        boot_plan, clone_target_for_distribution, default_local_model,
+        discard_pending_inference_setup_at, format_extension_import_failure,
+        format_missing_rust_toolchain, format_port_unavailable, format_uv_sync_failure,
+        format_uv_sync_spawn_error, git_clone_args, managed_cloud_key_names, manual_clone_command,
         matching_installed_model, model_names_match, normalize_host,
         parse_configured_inference_config, parse_ollama_model_names,
         persist_confirmed_inference_config_at, preferred_installed_model,
@@ -3508,7 +3574,8 @@ mod tests {
         should_persist_resolved_model, spawn_owned_child, stage_pending_inference_config_at,
         startup_installed_model, upsert_engine_host, uv_sync_stderr_tail, BackendManager,
         InferenceConfig, InferenceCredentialStore, PendingInferenceRollback, SetupStatus,
-        SourceKind, DESKTOP_UV_SYNC_COMMAND, PENDING_INFERENCE_API_KEY,
+        SourceKind, DESKTOP_SOURCE_BRANCH, DESKTOP_SOURCE_REPOSITORY, DESKTOP_UV_SYNC_COMMAND,
+        INSTALL_SCOPED_BACKEND, PENDING_INFERENCE_API_KEY,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -3581,6 +3648,71 @@ mod tests {
         assert_eq!(project_root_near_executable(&exe), Some(bundled_checkout));
 
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn install_scoped_clone_target_is_beside_the_desktop_executable() {
+        let home = Path::new("C:/Users/tester");
+        let exe = Path::new("C:/Users/tester/AppData/Local/OpenJarvis Preview/app.exe");
+
+        assert_eq!(
+            clone_target_for_distribution(Some(exe), home, true),
+            Path::new("C:/Users/tester/AppData/Local/OpenJarvis Preview/src")
+        );
+        assert_eq!(
+            clone_target_for_distribution(Some(exe), home, false),
+            Path::new("C:/Users/tester/OpenJarvis")
+        );
+    }
+
+    #[test]
+    fn git_clone_args_can_pin_the_preview_branch() {
+        let target = Path::new("C:/OpenJarvis Preview/src");
+        assert_eq!(
+            git_clone_args(
+                "https://github.com/GorDev11/OpenJarvis.git",
+                Some("feature/armenian-voice"),
+                target,
+            ),
+            vec![
+                "clone",
+                "--depth",
+                "1",
+                "--branch",
+                "feature/armenian-voice",
+                "--single-branch",
+                "https://github.com/GorDev11/OpenJarvis.git",
+                "C:/OpenJarvis Preview/src",
+            ]
+        );
+        assert_eq!(
+            manual_clone_command(
+                "https://github.com/GorDev11/OpenJarvis.git",
+                Some("feature/armenian-voice"),
+                target,
+            ),
+            "git clone --depth 1 --branch feature/armenian-voice --single-branch \
+             https://github.com/GorDev11/OpenJarvis.git \"C:/OpenJarvis Preview/src\""
+        );
+    }
+
+    #[test]
+    fn desktop_clone_source_matches_the_compiled_distribution() {
+        if cfg!(feature = "armenian-preview") {
+            assert!(INSTALL_SCOPED_BACKEND);
+            assert_eq!(
+                DESKTOP_SOURCE_REPOSITORY,
+                "https://github.com/GorDev11/OpenJarvis.git"
+            );
+            assert_eq!(DESKTOP_SOURCE_BRANCH, Some("feature/armenian-voice"));
+        } else {
+            assert!(!INSTALL_SCOPED_BACKEND);
+            assert_eq!(
+                DESKTOP_SOURCE_REPOSITORY,
+                "https://github.com/open-jarvis/OpenJarvis.git"
+            );
+            assert_eq!(DESKTOP_SOURCE_BRANCH, None);
+        }
     }
 
     #[test]

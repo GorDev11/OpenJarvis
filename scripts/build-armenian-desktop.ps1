@@ -66,6 +66,10 @@ if (-not $SkipTests) {
         "tests/speech/test_armenian_pocket_tts.py",
         "-q"
     )
+    Run-Checked "cargo" @(
+        "test", "--manifest-path", (Join-Path $frontend "src-tauri\Cargo.toml"),
+        "--lib", "--features", "armenian-preview"
+    )
 }
 
 $gpu = & (Join-Path $project ".venv\Scripts\python.exe") -c "import torch; print(torch.cuda.is_available())"

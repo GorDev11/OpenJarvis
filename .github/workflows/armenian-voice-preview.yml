@@ -52,6 +52,9 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: frontend/src-tauri -> target
+      - name: Preview launcher unit tests
+        working-directory: frontend/src-tauri
+        run: cargo test --lib --features armenian-preview
       - name: Build isolated Windows x64 NSIS installer
         working-directory: frontend
         run: npx tauri build --bundles nsis --config src-tauri/tauri.armenian-preview.conf.json
