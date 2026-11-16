@@ -51,17 +51,16 @@ def test_preview_rust_tests_require_built_tauri_assets() -> None:
     build_command = 'Run-Checked "npm.cmd" @("run", "build:tauri:armenian-preview")'
     assert script.index(build_command) < script.index('Run-Checked "cargo" @(')
 
+
 def test_preview_uses_dedicated_api_port_and_rejects_foreign_listener() -> None:
     launcher = (ROOT / "frontend" / "src-tauri" / "src" / "lib.rs").read_text(
         encoding="utf-8"
     )
     preview_port = (
-        '#[cfg(feature = "armenian-preview")]\n'
-        "const JARVIS_PORT: u16 = 18761;"
+        '#[cfg(feature = "armenian-preview")]\nconst JARVIS_PORT: u16 = 18761;'
     )
     stable_port = (
-        '#[cfg(not(feature = "armenian-preview"))]\n'
-        "const JARVIS_PORT: u16 = 8000;"
+        '#[cfg(not(feature = "armenian-preview"))]\nconst JARVIS_PORT: u16 = 8000;'
     )
     assert preview_port in launcher
     assert stable_port in launcher
