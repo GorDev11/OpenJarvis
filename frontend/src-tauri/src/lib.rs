@@ -1510,7 +1510,9 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                 // A healthy /health response does not prove process ownership.
                 let mut s = status.lock().await;
                 s.error = Some(format!(
-                    "Preview API port {} is occupied (HTTP {}). Close the previous                      Preview instance or free that port, then relaunch.                      The official OpenJarvis on port 8000 may remain running.",
+                    "Preview API port {} is occupied (HTTP {}). Close the previous \
+                     Preview instance or free that port, then relaunch. \
+                     The official OpenJarvis on port 8000 may remain running.",
                     JARVIS_PORT,
                     resp.status(),
                 ));
