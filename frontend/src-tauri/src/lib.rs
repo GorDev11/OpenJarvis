@@ -15,6 +15,16 @@ const DESKTOP_UV_SYNC_COMMAND: &str =
 const DESKTOP_UV_SYNC_COMMAND: &str =
     "uv sync --python cpython-3.12-windows-x86_64-none --extra desktop --extra inference-cloud --extra inference-google --group desktop-native";
 
+#[cfg(feature = "armenian-preview")]
+const DESKTOP_SOURCE_REPOSITORY: &str = "https://github.com/GorDev11/OpenJarvis.git";
+#[cfg(not(feature = "armenian-preview"))]
+const DESKTOP_SOURCE_REPOSITORY: &str = "https://github.com/open-jarvis/OpenJarvis.git";
+#[cfg(feature = "armenian-preview")]
+const DESKTOP_SOURCE_BRANCH: Option<&str> = Some("feature/armenian-voice");
+#[cfg(not(feature = "armenian-preview"))]
+const DESKTOP_SOURCE_BRANCH: Option<&str> = None;
+const INSTALL_SCOPED_BACKEND: bool = cfg!(feature = "armenian-preview");
+
 /// Small, fast model used when startup needs a default Ollama tag.
 const STARTUP_MODEL: &str = "qwen3.5:4b";
 
@@ -143,7 +153,7 @@ fn boot_plan(cfg: &InferenceConfig, ram_gb: f64) -> BootPlan {
                     "--model".into(),
                     model,
                     "--agent".into(),
-                    "simple".into(),
+                    "orchestrator".into(),
                 ],
             }
         }
@@ -174,7 +184,7 @@ fn boot_plan(cfg: &InferenceConfig, ram_gb: f64) -> BootPlan {
                     "--model".into(),
                     model,
                     "--agent".into(),
-                    "simple".into(),
+                    "orchestrator".into(),
                 ],
             }
         }
@@ -304,6 +314,13 @@ fn find_project_root() -> Option<std::path::PathBuf> {
         }
     }
 
+    // The Armenian Preview is an isolated distribution. If its checkout is
+    // absent, let first-launch provisioning restore the matching branch next
+    // to the executable instead of silently adopting an unrelated old clone.
+    if INSTALL_SCOPED_BACKEND {
+        return None;
+    }
+
     // 3. Fallback: well-known direct paths
     let home = home_dir();
     let direct = [
@@ -365,6 +382,50 @@ fn find_project_root() -> Option<std::path::PathBuf> {
     None
 }
 
+fn clone_target_for_distribution(
+    executable: Option<&std::path::Path>,
+    home: &std::path::Path,
+    install_scoped: bool,
+) -> std::path::PathBuf {
+    if install_scoped {
+        if let Some(executable_dir) = executable.and_then(std::path::Path::parent) {
+            return executable_dir.join("src");
+        }
+    }
+
+    home.join("OpenJarvis")
+}
+
+fn default_clone_target() -> std::path::PathBuf {
+    let executable = std::env::current_exe().ok();
+    let home = std::path::PathBuf::from(home_dir());
+    clone_target_for_distribution(executable.as_deref(), &home, INSTALL_SCOPED_BACKEND)
+}
+
+fn git_clone_args(repository: &str, branch: Option<&str>, target: &std::path::Path) -> Vec<String> {
+    let mut args = vec!["clone".into(), "--depth".into(), "1".into()];
+    if let Some(branch) = branch {
+        args.extend(["--branch".into(), branch.into(), "--single-branch".into()]);
+    }
+    args.push(repository.into());
+    args.push(target.display().to_string());
+    args
+}
+
+fn manual_clone_command(
+    repository: &str,
+    branch: Option<&str>,
+    target: &std::path::Path,
+) -> String {
+    let branch_args = branch
+        .map(|branch| format!(" --branch {branch} --single-branch"))
+        .unwrap_or_default();
+    format!(
+        "git clone --depth 1{branch_args} {repository} \"{}\"",
+        target.display()
+    )
+}
+
 fn project_root_near_executable(exe: &std::path::Path) -> Option<std::path::PathBuf> {
     let exe_dir = exe.parent()?;
 
@@ -402,7 +463,38 @@ struct ChildHandle {
 
 impl ChildHandle {
     async fn kill(&mut self) {
-        let _ = self.child.kill().await;
+        #[cfg(target_os = "windows")]
+        {
+            // `uv run jarvis serve` is a launcher process. Killing only `uv`
+            // can leave its Python descendant alive long enough for the next
+            // desktop start to see a stale daemon PID. Terminate the complete
+            // tree we own, without opening a console window, and reap the
+            // tracked launcher before returning.
+            let mut killed_tree = false;
+            if let Some(pid) = self.child.id() {
+                use std::os::windows::process::CommandExt as _;
+
+                let mut taskkill = tokio::process::Command::new("taskkill");
+                taskkill
+                    .args(["/F", "/T", "/PID", &pid.to_string()])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
+                taskkill.as_std_mut().creation_flags(0x0800_0000);
+                killed_tree = taskkill
+                    .status()
+                    .await
+                    .map(|status| status.success())
+                    .unwrap_or(false);
+            }
+            if !killed_tree {
+                let _ = self.child.kill().await;
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = self.child.kill().await;
+        }
+        let _ = self.child.wait().await;
     }
 }
 
@@ -1296,8 +1388,18 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             return;
         }
 
-        let target_path = std::path::PathBuf::from(home_dir()).join("OpenJarvis");
+        let target_path = default_clone_target();
         let clone_target = target_path.display().to_string();
+        let clone_args = git_clone_args(
+            DESKTOP_SOURCE_REPOSITORY,
+            DESKTOP_SOURCE_BRANCH,
+            &target_path,
+        );
+        let manual_clone = manual_clone_command(
+            DESKTOP_SOURCE_REPOSITORY,
+            DESKTOP_SOURCE_BRANCH,
+            &target_path,
+        );
 
         // If the directory exists but is not a valid project, don't overwrite
         if target_path.exists() && !target_path.join("pyproject.toml").exists() {
@@ -1317,13 +1419,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 
         let mut clone_cmd = tokio::process::Command::new(&git_bin);
         clone_cmd
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                "https://github.com/open-jarvis/OpenJarvis.git",
-                &clone_target,
-            ])
+            .args(&clone_args)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped());
         prepare_subprocess_for_appimage(&mut clone_cmd);
@@ -1339,9 +1435,9 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     let mut s = status.lock().await;
                     s.error = Some(format!(
                         "Failed to download OpenJarvis: {}. \
-                         Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
+                         Clone manually: {}",
                         stderr.trim(),
-                        clone_target,
+                        manual_clone,
                     ));
                     return;
                 }
@@ -1349,8 +1445,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     let mut s = status.lock().await;
                     s.error = Some(format!(
                         "Failed to download OpenJarvis: {}. \
-                         Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
-                        e, clone_target,
+                         Clone manually: {}",
+                        e, manual_clone,
                     ));
                     return;
                 }
@@ -1610,6 +1706,9 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     // additions aren't accidentally stripped.
     prepare_subprocess_for_appimage(&mut cmd);
     prepare_backend_python(&mut cmd);
+    // Only this trusted launcher may enable native per-tool confirmation in
+    // the Python backend. Browser/headless servers stay fail-closed.
+    cmd.env("OPENJARVIS_DESKTOP", "1");
 
     // Inject cloud API keys from secure desktop storage.
     for (key, value) in cloud_keys_for_inference(&cfg) {
@@ -3481,7 +3580,10 @@ pub fn run() {
         .run(move |_app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let b = backend.clone();
-                tauri::async_runtime::spawn(async move {
+                // Returning from this callback lets the runtime and all
+                // pending cleanup tasks disappear. Block the final exit until
+                // every owned backend process has actually been reaped.
+                tauri::async_runtime::block_on(async move {
                     b.lock().await.stop_all().await;
                 });
             }
@@ -3495,17 +3597,19 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        boot_plan, default_local_model, discard_pending_inference_setup_at,
-        format_extension_import_failure, format_missing_rust_toolchain, format_port_unavailable,
-        format_uv_sync_failure, format_uv_sync_spawn_error, managed_cloud_key_names,
+        boot_plan, clone_target_for_distribution, default_local_model,
+        discard_pending_inference_setup_at, format_extension_import_failure,
+        format_missing_rust_toolchain, format_port_unavailable, format_uv_sync_failure,
+        format_uv_sync_spawn_error, git_clone_args, managed_cloud_key_names, manual_clone_command,
         matching_installed_model, model_names_match, normalize_host,
         parse_configured_inference_config, parse_ollama_model_names,
         persist_confirmed_inference_config_at, preferred_installed_model,
         project_root_near_executable, reload_cloud_keys_for_owned_backend_at,
         should_persist_resolved_model, spawn_owned_child, stage_pending_inference_config_at,
         startup_installed_model, upsert_engine_host, uv_sync_stderr_tail, BackendManager,
-        InferenceConfig, InferenceCredentialStore, PendingInferenceRollback, SetupStatus,
-        SourceKind, DESKTOP_UV_SYNC_COMMAND, PENDING_INFERENCE_API_KEY,
+        ChildHandle, InferenceConfig, InferenceCredentialStore, PendingInferenceRollback,
+        SetupStatus, SourceKind, DESKTOP_SOURCE_BRANCH, DESKTOP_SOURCE_REPOSITORY,
+        DESKTOP_UV_SYNC_COMMAND, INSTALL_SCOPED_BACKEND, PENDING_INFERENCE_API_KEY,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -3578,6 +3682,71 @@ mod tests {
         assert_eq!(project_root_near_executable(&exe), Some(bundled_checkout));
 
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn install_scoped_clone_target_is_beside_the_desktop_executable() {
+        let home = Path::new("C:/Users/tester");
+        let exe = Path::new("C:/Users/tester/AppData/Local/OpenJarvis Preview/app.exe");
+
+        assert_eq!(
+            clone_target_for_distribution(Some(exe), home, true),
+            Path::new("C:/Users/tester/AppData/Local/OpenJarvis Preview/src")
+        );
+        assert_eq!(
+            clone_target_for_distribution(Some(exe), home, false),
+            Path::new("C:/Users/tester/OpenJarvis")
+        );
+    }
+
+    #[test]
+    fn git_clone_args_can_pin_the_preview_branch() {
+        let target = Path::new("C:/OpenJarvis Preview/src");
+        assert_eq!(
+            git_clone_args(
+                "https://github.com/GorDev11/OpenJarvis.git",
+                Some("feature/armenian-voice"),
+                target,
+            ),
+            vec![
+                "clone",
+                "--depth",
+                "1",
+                "--branch",
+                "feature/armenian-voice",
+                "--single-branch",
+                "https://github.com/GorDev11/OpenJarvis.git",
+                "C:/OpenJarvis Preview/src",
+            ]
+        );
+        assert_eq!(
+            manual_clone_command(
+                "https://github.com/GorDev11/OpenJarvis.git",
+                Some("feature/armenian-voice"),
+                target,
+            ),
+            "git clone --depth 1 --branch feature/armenian-voice --single-branch \
+             https://github.com/GorDev11/OpenJarvis.git \"C:/OpenJarvis Preview/src\""
+        );
+    }
+
+    #[test]
+    fn desktop_clone_source_matches_the_compiled_distribution() {
+        if cfg!(feature = "armenian-preview") {
+            assert!(INSTALL_SCOPED_BACKEND);
+            assert_eq!(
+                DESKTOP_SOURCE_REPOSITORY,
+                "https://github.com/GorDev11/OpenJarvis.git"
+            );
+            assert_eq!(DESKTOP_SOURCE_BRANCH, Some("feature/armenian-voice"));
+        } else {
+            assert!(!INSTALL_SCOPED_BACKEND);
+            assert_eq!(
+                DESKTOP_SOURCE_REPOSITORY,
+                "https://github.com/open-jarvis/OpenJarvis.git"
+            );
+            assert_eq!(DESKTOP_SOURCE_BRANCH, None);
+        }
     }
 
     #[test]
@@ -3905,6 +4074,10 @@ mod tests {
             .serve_args
             .windows(2)
             .any(|w| w == ["--model", "qwen3.5:4b"]));
+        assert!(plan
+            .serve_args
+            .windows(2)
+            .any(|w| w == ["--agent", "orchestrator"]));
     }
 
     #[test]
@@ -3942,6 +4115,10 @@ mod tests {
             .serve_args
             .windows(2)
             .any(|w| w == ["--model", "qwen2.5-7b"]));
+        assert!(plan
+            .serve_args
+            .windows(2)
+            .any(|w| w == ["--agent", "orchestrator"]));
     }
 
     #[test]
@@ -4285,6 +4462,86 @@ mod tests {
         std::fs::write(started, "started").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(500));
         std::fs::write(completed, "completed").unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn owned_process_tree_grandchild_helper() {
+        let Some(started) = std::env::var_os("OPENJARVIS_TREE_STARTED") else {
+            return;
+        };
+        let completed = std::env::var_os("OPENJARVIS_TREE_COMPLETED").unwrap();
+        std::fs::write(started, "started").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        std::fs::write(completed, "completed").unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn owned_process_tree_parent_helper() {
+        let Some(started) = std::env::var_os("OPENJARVIS_TREE_STARTED") else {
+            return;
+        };
+        let completed = std::env::var_os("OPENJARVIS_TREE_COMPLETED").unwrap();
+        let _grandchild = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "tests::owned_process_tree_grandchild_helper",
+                "--nocapture",
+            ])
+            .env("OPENJARVIS_TREE_STARTED", started)
+            .env("OPENJARVIS_TREE_COMPLETED", completed)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(30));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn stopping_backend_kills_the_owned_windows_process_tree() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "openjarvis-owned-tree-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let started = root.join("started");
+        let completed = root.join("completed");
+
+        let mut cmd = tokio::process::Command::new(std::env::current_exe().unwrap());
+        cmd.args([
+            "--exact",
+            "tests::owned_process_tree_parent_helper",
+            "--nocapture",
+        ])
+        .env("OPENJARVIS_TREE_STARTED", &started)
+        .env("OPENJARVIS_TREE_COMPLETED", &completed)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+        let child = spawn_owned_child(&mut cmd).unwrap();
+        let mut handle = ChildHandle { child };
+
+        for _ in 0..100 {
+            if started.exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(started.exists(), "grandchild process did not start");
+
+        handle.kill().await;
+        tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+
+        assert!(
+            !completed.exists(),
+            "stopping the backend left its Python-like descendant running"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]

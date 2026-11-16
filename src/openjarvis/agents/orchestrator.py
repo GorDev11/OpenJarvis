@@ -12,14 +12,20 @@ Supports two modes:
 
 from __future__ import annotations
 
+import asyncio
 import concurrent.futures
 import json
 import logging
 import re
 from typing import Any, Callable, List, Optional
 
-from openjarvis.agents._stubs import AgentContext, AgentResult, ToolUsingAgent
-from openjarvis.core.events import EventBus
+from openjarvis.agents._stubs import (
+    _ALLOWED_ENGINE_OPTION_KEYS,
+    AgentContext,
+    AgentResult,
+    ToolUsingAgent,
+)
+from openjarvis.core.events import EventBus, EventType
 from openjarvis.core.registry import AgentRegistry
 from openjarvis.core.types import Message, Role, ToolCall, ToolResult
 from openjarvis.engine._stubs import InferenceEngine
@@ -45,6 +51,7 @@ class OrchestratorAgent(ToolUsingAgent):
     """
 
     agent_id = "orchestrator"
+    supports_live_stream = True
     _default_temperature = 0.7
     _default_max_tokens = 1024
     _default_max_turns = 10
@@ -59,6 +66,7 @@ class OrchestratorAgent(ToolUsingAgent):
         max_turns: Optional[int] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        engine_options: Optional[dict[str, Any]] = None,
         mode: str = "function_calling",
         system_prompt: Optional[str] = None,
         prompt_builder: Optional[Any] = None,
@@ -78,6 +86,7 @@ class OrchestratorAgent(ToolUsingAgent):
             max_turns=max_turns,
             temperature=temperature,
             max_tokens=max_tokens,
+            engine_options=engine_options,
             interactive=interactive,
             confirm_callback=confirm_callback,
             prompt_builder=prompt_builder,
@@ -342,6 +351,168 @@ class OrchestratorAgent(ToolUsingAgent):
     # Function-calling mode (original behaviour)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _merge_stream_tool_calls(
+        accumulated: dict[int, dict[str, Any]],
+        fragments: list[dict[str, Any]],
+    ) -> None:
+        """Merge OpenAI-style deltas or already-normalized tool calls."""
+
+        for fallback_index, fragment in enumerate(fragments):
+            index = int(fragment.get("index", fallback_index))
+            entry = accumulated.setdefault(
+                index,
+                {"id": "", "name": "", "arguments": ""},
+            )
+            if fragment.get("id"):
+                entry["id"] = str(fragment["id"])
+            function = fragment.get("function")
+            if not isinstance(function, dict):
+                function = fragment
+            if function.get("name"):
+                entry["name"] += str(function["name"])
+            arguments = function.get("arguments")
+            if arguments:
+                entry["arguments"] += (
+                    json.dumps(arguments)
+                    if isinstance(arguments, dict)
+                    else str(arguments)
+                )
+
+    async def _consume_engine_stream(
+        self,
+        messages: list[Message],
+        *,
+        stream_callback: Callable[[str], None],
+        stream_cancel_event: Any = None,
+        **extra_kwargs: Any,
+    ) -> dict[str, Any]:
+        content_parts: list[str] = []
+        tool_fragments: dict[int, dict[str, Any]] = {}
+        usage: dict[str, Any] = {}
+        finish_reason = ""
+        response_loop_reason = ""
+
+        gen_kwargs = {
+            key: value
+            for key, value in self._engine_options.items()
+            if key in _ALLOWED_ENGINE_OPTION_KEYS
+        }
+        gen_kwargs.update(extra_kwargs)
+
+        async for chunk in self._engine.stream_full(
+            messages,
+            model=self._model,
+            temperature=self._temperature,
+            max_tokens=self._max_tokens,
+            **gen_kwargs,
+        ):
+            if stream_cancel_event is not None and stream_cancel_event.is_set():
+                raise asyncio.CancelledError
+            if chunk.content:
+                candidate = "".join(content_parts) + chunk.content
+                if self._loop_guard:
+                    verdict = self._loop_guard.check_response(candidate)
+                    if verdict.blocked:
+                        response_loop_reason = verdict.reason
+                        finish_reason = "loop_guard"
+                        if not content_parts:
+                            collapsed = self._loop_guard.deduplicate_response(candidate)
+                            content_parts.append(collapsed)
+                            stream_callback(collapsed)
+                        break
+                content_parts.append(chunk.content)
+                stream_callback(chunk.content)
+            if chunk.tool_calls:
+                self._merge_stream_tool_calls(tool_fragments, chunk.tool_calls)
+            if chunk.usage:
+                usage.update(chunk.usage)
+            if chunk.finish_reason:
+                finish_reason = chunk.finish_reason
+
+        tool_calls = []
+        for index in sorted(tool_fragments):
+            call = tool_fragments[index]
+            tool_calls.append(
+                {
+                    "id": call["id"] or f"call_{index}",
+                    "name": call["name"],
+                    "arguments": call["arguments"] or "{}",
+                }
+            )
+        content = "".join(content_parts)
+        return {
+            "content": content,
+            "tool_calls": tool_calls,
+            "usage": usage,
+            "finish_reason": finish_reason or ("tool_calls" if tool_calls else "stop"),
+            "_streamed_content": content,
+            "_response_loop_reason": response_loop_reason,
+        }
+
+    def _generate_streaming(
+        self,
+        messages: list[Message],
+        *,
+        stream_callback: Callable[[str], None],
+        stream_event_loop: Any = None,
+        stream_cancel_event: Any = None,
+        **extra_kwargs: Any,
+    ) -> dict[str, Any]:
+        """Consume ``stream_full`` without blocking the server event loop."""
+
+        if stream_event_loop is None or not stream_event_loop.is_running():
+            # The HTTP server always supplies its running loop. A synchronous
+            # SDK caller has no safe loop on which to consume an async engine,
+            # so retain compatibility with one authoritative generate() call
+            # and expose its content through the same callback contract.
+            result = self._generate(messages, **extra_kwargs)
+            content = result.get("content", "")
+            if content:
+                stream_callback(content)
+            result["_streamed_content"] = content
+            return result
+
+        publishes_events = getattr(self._engine, "_publishes_events", False)
+        if self._bus and not publishes_events:
+            self._bus.publish(
+                EventType.INFERENCE_START,
+                {
+                    "model": self._model,
+                    "engine": getattr(self._engine, "engine_id", ""),
+                },
+            )
+
+        coroutine = self._consume_engine_stream(
+            messages,
+            stream_callback=stream_callback,
+            stream_cancel_event=stream_cancel_event,
+            **extra_kwargs,
+        )
+        future = asyncio.run_coroutine_threadsafe(coroutine, stream_event_loop)
+        while True:
+            if stream_cancel_event is not None and stream_cancel_event.is_set():
+                future.cancel()
+                raise RuntimeError("Agent stream cancelled by client")
+            try:
+                result = future.result(timeout=0.05)
+                break
+            except concurrent.futures.TimeoutError:
+                continue
+
+        if self._bus and not publishes_events:
+            self._bus.publish(
+                EventType.INFERENCE_END,
+                {
+                    "model": self._model,
+                    "usage": result.get("usage", {}),
+                    "content": result.get("content", ""),
+                    "tool_calls": result.get("tool_calls", []),
+                    "finish_reason": result.get("finish_reason", ""),
+                },
+            )
+        return result
+
     def _run_function_calling(
         self,
         input: str,
@@ -364,6 +535,24 @@ class OrchestratorAgent(ToolUsingAgent):
         turns = 0
         total_prompt_tokens = 0
         total_completion_tokens = 0
+        stream_callback = kwargs.get("stream_callback")
+        stream_event_loop = kwargs.get("stream_event_loop")
+        stream_cancel_event = kwargs.get("stream_cancel_event")
+        streamed_tool_preambles = ""
+        from openjarvis.agents.safe_tool_routing import select_safe_tool_routes
+
+        deterministic_routes = select_safe_tool_routes(
+            input,
+            (tool.spec.name for tool in self._tools),
+        )
+        pending_routed_calls = [
+            {
+                "id": f"safe_route_{index}",
+                "name": route.name,
+                "arguments": route.arguments,
+            }
+            for index, route in enumerate(deterministic_routes, start=1)
+        ]
 
         for _turn in range(self._max_turns):
             turns += 1
@@ -373,10 +562,35 @@ class OrchestratorAgent(ToolUsingAgent):
 
             # Build generate kwargs
             gen_kwargs: dict[str, Any] = {}
-            if openai_tools:
+            # A deterministic route already executed exactly the reviewed
+            # read-only diagnostic(s) requested by the user. The follow-up
+            # model turn must summarize those results, not escalate to a
+            # broader tool such as shell_exec or repeat extra diagnostics.
+            if openai_tools and not deterministic_routes:
                 gen_kwargs["tools"] = openai_tools
 
-            result = self._generate(messages, **gen_kwargs)
+            if pending_routed_calls:
+                # Execute explicit, reviewed read-only diagnostics before the
+                # model can replace the requested action with prose. The tool
+                # results are then fed back to the model for a grounded answer.
+                result = {
+                    "content": "",
+                    "tool_calls": pending_routed_calls,
+                    "usage": {},
+                    "finish_reason": "tool_calls",
+                }
+                pending_routed_calls = []
+            else:
+                if stream_callback is not None:
+                    result = self._generate_streaming(
+                        messages,
+                        stream_callback=stream_callback,
+                        stream_event_loop=stream_event_loop,
+                        stream_cancel_event=stream_cancel_event,
+                        **gen_kwargs,
+                    )
+                else:
+                    result = self._generate(messages, **gen_kwargs)
 
             # Accumulate token usage
             usage = result.get("usage", {})
@@ -385,22 +599,58 @@ class OrchestratorAgent(ToolUsingAgent):
 
             content = result.get("content", "")
             raw_tool_calls = result.get("tool_calls", [])
+            streamed_turn = result.get("_streamed_content", "")
+            response_loop_reason = result.get("_response_loop_reason", "")
 
             # No tool calls -> check continuation, then final answer
             if not raw_tool_calls:
                 content = self._check_continuation(result, messages)
-                content = self._strip_think_tags(content)
-                self._emit_turn_end(turns=turns, content_length=len(content))
+                stripped_content = self._strip_think_tags(content)
+                guarded_content = (
+                    content
+                    if stream_callback is not None and streamed_turn
+                    else stripped_content
+                )
+                if self._loop_guard and not response_loop_reason:
+                    response_verdict = self._loop_guard.check_response(guarded_content)
+                    if response_verdict.blocked:
+                        response_loop_reason = response_verdict.reason
+                if (
+                    response_loop_reason
+                    and self._loop_guard
+                    and stream_callback is None
+                ):
+                    guarded_content = self._loop_guard.deduplicate_response(
+                        guarded_content
+                    )
+                # Preserve byte-for-byte prefix agreement with content already
+                # delivered to the UI. Any continuation generated
+                # synchronously is replayed by AgentStreamBridge.
+                final_content = streamed_tool_preambles + guarded_content
+                self._emit_turn_end(
+                    turns=turns,
+                    content_length=len(final_content),
+                )
+                metadata = {
+                    "prompt_tokens": total_prompt_tokens,
+                    "completion_tokens": total_completion_tokens,
+                    "total_tokens": total_prompt_tokens + total_completion_tokens,
+                    "deterministic_routes": [
+                        route.name for route in deterministic_routes
+                    ],
+                }
+                if response_loop_reason:
+                    metadata["response_loop_blocked"] = True
+                    metadata["response_loop_reason"] = response_loop_reason
                 return AgentResult(
-                    content=content,
+                    content=final_content,
                     tool_results=all_tool_results,
                     turns=turns,
-                    metadata={
-                        "prompt_tokens": total_prompt_tokens,
-                        "completion_tokens": total_completion_tokens,
-                        "total_tokens": total_prompt_tokens + total_completion_tokens,
-                    },
+                    metadata=metadata,
                 )
+
+            if streamed_turn:
+                streamed_tool_preambles += streamed_turn
 
             # Build ToolCall objects from raw dicts
             tool_calls = [
@@ -527,6 +777,7 @@ class OrchestratorAgent(ToolUsingAgent):
 
         # Max turns exceeded
         final_content = self._strip_think_tags(content) if content else ""
+        final_content = streamed_tool_preambles + final_content
         self._emit_turn_end(turns=turns, max_turns_exceeded=True)
         return AgentResult(
             content=final_content or "Maximum turns reached without a final answer.",

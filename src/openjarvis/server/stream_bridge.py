@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import threading
 import uuid
-from typing import AsyncGenerator
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, Callable, Optional
 
 from fastapi.responses import StreamingResponse
 
@@ -36,6 +39,14 @@ _EVENT_MAP = {
 
 # Sentinel signalling that the agent thread has finished
 _DONE = object()
+logger = logging.getLogger("openjarvis.server")
+
+
+@dataclass(frozen=True, slots=True)
+class _ContentDelta:
+    """One authoritative text fragment emitted by a streaming agent run."""
+
+    content: str
 
 
 def _estimate_prompt_tokens(messages: list) -> int:
@@ -74,14 +85,25 @@ class AgentStreamBridge:
         bus: EventBus,
         model: str,
         request: ChatCompletionRequest,
+        *,
+        runner: Optional[
+            Callable[[Callable[[str], None], threading.Event], object]
+        ] = None,
+        complexity_info: Any = None,
+        on_complete: Optional[Callable[[str], None]] = None,
     ) -> None:
         self._agent = agent
         self._bus = bus
         self._model = model
         self._request = request
+        self._runner = runner
+        self._complexity_info = complexity_info
+        self._on_complete = on_complete
         self._chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         self._queue: asyncio.Queue = asyncio.Queue()
         self._callbacks: dict[EventType, object] = {}
+        self._content_callback: Optional[Callable[[str], None]] = None
+        self._cancel_event = threading.Event()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -120,6 +142,10 @@ class AgentStreamBridge:
 
     def _run_agent(self) -> object:
         """Execute the agent synchronously (called via asyncio.to_thread)."""
+        if self._runner is not None:
+            callback = self._content_callback or (lambda _content: None)
+            return self._runner(callback, self._cancel_event)
+
         ctx = AgentContext()
         # Build conversation context from prior messages
         if len(self._request.messages) > 1:
@@ -158,7 +184,16 @@ class AgentStreamBridge:
         self._subscribe_all()
 
         # Kick off agent.run() in a background thread
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
+
+        def _emit_content(content: str) -> None:
+            if content:
+                loop.call_soon_threadsafe(
+                    self._queue.put_nowait,
+                    _ContentDelta(content),
+                )
+
+        self._content_callback = _emit_content
         agent_task = asyncio.ensure_future(asyncio.to_thread(self._run_agent))
 
         def _on_done(fut):
@@ -179,7 +214,10 @@ class AgentStreamBridge:
             )
             yield f"data: {first_chunk.model_dump_json()}\n\n"
 
-            # Drain queue until the agent finishes
+            # Drain queue until the agent finishes. Tool lifecycle events and
+            # authoritative content fragments can arrive while the synchronous
+            # agent is still running in its worker thread.
+            streamed_content = ""
             while True:
                 item = await self._queue.get()
 
@@ -190,14 +228,21 @@ class AgentStreamBridge:
                     sse_name = _EVENT_MAP.get(item.event_type)
                     if sse_name:
                         yield self._format_named_event(sse_name, item.data)
+                elif isinstance(item, _ContentDelta):
+                    streamed_content += item.content
+                    chunk = ChatCompletionChunk(
+                        id=self._chunk_id,
+                        model=self._model,
+                        choices=[
+                            StreamChoice(delta=DeltaMessage(content=item.content))
+                        ],
+                    )
+                    yield f"data: {chunk.model_dump_json()}\n\n"
 
             # Agent is done -- retrieve result
             try:
                 agent_result = agent_task.result()
             except Exception as exc:
-                import logging
-
-                logger = logging.getLogger("openjarvis.server")
                 logger.error("Agent stream error: %s", exc, exc_info=True)
 
                 error_str = str(exc)
@@ -254,8 +299,20 @@ class AgentStreamBridge:
             # in chunks so the OpenAI-compatible streaming response stays
             # consistent with the completed agent run.
             content = agent_result.content or ""
-            if content:
-                words = content.split(" ")
+            remaining_content = content
+            if streamed_content:
+                if content.startswith(streamed_content):
+                    remaining_content = content[len(streamed_content) :]
+                else:
+                    # Never duplicate or replace already displayed text. This
+                    # should only happen if a custom runner emits non-final
+                    # content; report it so that runner can be fixed.
+                    logger.warning(
+                        "Live agent content was not a prefix of the final result"
+                    )
+                    remaining_content = ""
+            if remaining_content:
+                words = remaining_content.split(" ")
                 for i, word in enumerate(words):
                     token = word if i == 0 else " " + word
                     chunk = ChatCompletionChunk(
@@ -299,17 +356,35 @@ class AgentStreamBridge:
                 completion_tokens=completion_tokens,
                 total_tokens=total_tokens,
             ).model_dump()
+            if self._complexity_info is not None:
+                if hasattr(self._complexity_info, "model_dump"):
+                    final_data["complexity"] = self._complexity_info.model_dump()
+                else:
+                    final_data["complexity"] = self._complexity_info
             yield f"data: {json.dumps(final_data)}\n\n"
+
+            if self._on_complete is not None:
+                try:
+                    self._on_complete(content)
+                except Exception:
+                    logger.exception("Agent stream completion callback failed")
 
             yield "data: [DONE]\n\n"
 
         except Exception:
             # On error, cancel the agent task if still running
+            self._cancel_event.set()
             if not agent_task.done():
                 agent_task.cancel()
             raise
         finally:
+            # Cancelling asyncio.to_thread() alone cannot stop its worker.
+            # Signal the streaming agent as well so its upstream HTTP stream is
+            # cancelled and the thread exits promptly after a client Stop/
+            # disconnect instead of consuming the full generation unseen.
+            self._cancel_event.set()
             self._unsubscribe_all()
+            self._content_callback = None
 
 
 async def create_agent_stream(

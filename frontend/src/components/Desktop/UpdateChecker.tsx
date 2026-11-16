@@ -5,6 +5,11 @@ type UpdateState = 'idle' | 'available' | 'downloading' | 'ready' | 'error';
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const DISABLED_KEY = 'oj-auto-update-disabled';
 
+export function isUpdaterBuildDisabled(): boolean {
+  const value = (import.meta as any).env?.VITE_OPENJARVIS_NO_UPDATER;
+  return value === '1' || value === 'true';
+}
+
 export function isAutoUpdateDisabled(): boolean {
   try {
     return localStorage.getItem(DISABLED_KEY) === '1';
@@ -32,7 +37,7 @@ export function UpdateChecker() {
   const updateRef = useRef<any>(null);
 
   const checkForUpdate = useCallback(async () => {
-    if (isAutoUpdateDisabled()) return;
+    if (isUpdaterBuildDisabled() || isAutoUpdateDisabled()) return;
     try {
       const { check } = await import('@tauri-apps/plugin-updater');
       const update = await check();
@@ -51,17 +56,10 @@ export function UpdateChecker() {
     if (typeof window === 'undefined' || !(window as any).__TAURI_INTERNALS__) {
       return;
     }
-    if (isAutoUpdateDisabled()) return;
-
-    // Local dev escape hatch: skip the auto-update poll if explicitly
-    // disabled. Vite exposes any ``VITE_``-prefixed env var on
-    // ``import.meta.env``, so a frontend dev can ``export
-    // VITE_OPENJARVIS_NO_UPDATER=1`` before ``npm run tauri dev`` to
-    // silence the 30-min poll. See docs/desktop-auto-update.md.
-    const noUpdater = (import.meta as any).env?.VITE_OPENJARVIS_NO_UPDATER;
-    if (noUpdater === '1' || noUpdater === 'true') {
-      return;
-    }
+    // Preview builds compile this flag in and have no updater endpoint. Keep
+    // both automatic and manual update paths inert so an isolated preview can
+    // never cross into the stable channel.
+    if (isUpdaterBuildDisabled() || isAutoUpdateDisabled()) return;
 
     checkForUpdate();
     const interval = setInterval(checkForUpdate, CHECK_INTERVAL_MS);

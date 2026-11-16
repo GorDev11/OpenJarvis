@@ -24,6 +24,16 @@ _SAFE_ENV_VARS = frozenset(
         "LC_CTYPE",
         "TMPDIR",
         "TZ",
+        # Windows needs these to locate cmd.exe, system utilities, the user
+        # profile, and a writable temporary directory when the inherited
+        # environment is intentionally stripped.
+        "COMSPEC",
+        "SYSTEMROOT",
+        "WINDIR",
+        "PATHEXT",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
     }
 )
 
@@ -61,6 +71,26 @@ def build_safe_env(
 
 def kill_process_tree(pid: int) -> None:
     """Kill a process and all its children (best effort)."""
+    if os.name == "nt":
+        try:
+            completed = subprocess.run(  # noqa: S603
+                ["taskkill.exe", "/PID", str(pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if completed.returncode not in (0, 128):
+                logger.debug(
+                    "taskkill could not terminate process tree %d: %s",
+                    pid,
+                    completed.stderr.strip(),
+                )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug("Failed to terminate Windows process tree %d: %s", pid, exc)
+        return
+
     try:
         os.killpg(os.getpgid(pid), signal.SIGTERM)
     except (OSError, ProcessLookupError) as exc:
@@ -93,6 +123,16 @@ def run_sandboxed(
 
     result = SandboxResult()
     try:
+        process_group: dict[str, object] = {}
+        if os.name == "nt":
+            process_group["creationflags"] = getattr(
+                subprocess,
+                "CREATE_NEW_PROCESS_GROUP",
+                0,
+            ) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        else:
+            process_group["start_new_session"] = True
+
         proc = subprocess.Popen(
             command,
             # This API explicitly runs caller-provided shell commands.
@@ -102,7 +142,7 @@ def run_sandboxed(
             text=True,
             env=env,
             cwd=cwd,
-            preexec_fn=os.setsid,  # New process group
+            **process_group,
         )
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
@@ -111,7 +151,11 @@ def run_sandboxed(
             result.returncode = proc.returncode
         except subprocess.TimeoutExpired:
             kill_process_tree(proc.pid)
-            proc.wait(timeout=5)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=2)
             result.timed_out = True
             result.killed = True
             result.returncode = -1

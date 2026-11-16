@@ -1,0 +1,16 @@
+{
+  "productName": "OpenJarvis Armenian Preview",
+  "identifier": "com.openjarvis.desktop.armenianpreview",
+  "build": {
+    "beforeBuildCommand": "npm run build:tauri:armenian-preview",
+    "features": ["armenian-preview"]
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": []
+    }
+  }
+}

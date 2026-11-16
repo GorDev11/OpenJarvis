@@ -659,6 +659,7 @@ class TestChatCompletions:
         """Server-side tools remain available to streaming web clients (#735)."""
         from openjarvis.agents.orchestrator import OrchestratorAgent
         from openjarvis.core.types import ToolResult
+        from openjarvis.engine._stubs import StreamChunk
         from openjarvis.tools._stubs import BaseTool, ToolSpec
 
         executions: list[str] = []
@@ -684,24 +685,28 @@ class TestChatCompletions:
                 )
 
         engine = _make_engine(content="ENGINE BYPASS")
-        engine.generate.side_effect = [
-            {
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": "call_1",
-                        "name": "file_read",
-                        "arguments": '{"path": "README.md"}',
-                    }
-                ],
-                "usage": {},
-            },
-            {
-                "content": "README fixture contents",
-                "finish_reason": "stop",
-                "usage": {},
-            },
-        ]
+        stream_calls = 0
+
+        async def mock_stream_full(*_args, **_kwargs):
+            nonlocal stream_calls
+            stream_calls += 1
+            if stream_calls == 1:
+                yield StreamChunk(
+                    tool_calls=[
+                        {
+                            "index": 0,
+                            "id": "call_1",
+                            "name": "file_read",
+                            "arguments": '{"path": "README.md"}',
+                        }
+                    ],
+                    finish_reason="tool_calls",
+                )
+                return
+            yield StreamChunk(content="README fixture ")
+            yield StreamChunk(content="contents", finish_reason="stop")
+
+        engine.stream_full = mock_stream_full
         agent = OrchestratorAgent(
             engine,
             "test-model",
@@ -741,7 +746,8 @@ class TestChatCompletions:
 
         assert content == "README fixture contents"
         assert executions == ["README.md"]
-        assert engine.generate.call_count == 2
+        assert stream_calls == 2
+        engine.generate.assert_not_called()
 
     def test_streaming_with_tools_emits_tool_calls_and_bypasses_agent(self):
         """Regression for the streaming analog of #414.

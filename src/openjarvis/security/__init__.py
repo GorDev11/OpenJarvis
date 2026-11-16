@@ -11,6 +11,25 @@ from openjarvis.core.events import EventBus
 
 logger = logging.getLogger(__name__)
 
+_STRICTLY_LOCAL_ENGINE_IDS = frozenset({"afm", "gemma_cpp", "ollama"})
+
+
+def _desktop_pii_passthrough_tools(engine: Any) -> tuple[str, ...]:
+    """Return local diagnostic tools whose PII may stay on this device.
+
+    This is intentionally narrower than disabling the PII scanner: only a
+    backend launched by the trusted Desktop shell, using an engine that cannot
+    send prompts to a remote provider, may pass network diagnostic addresses
+    to the local model. SecretScanner remains active for the same messages.
+    """
+
+    from openjarvis.security.confirmation import is_desktop_runtime
+
+    engine_id = str(getattr(engine, "engine_id", "")).casefold()
+    if is_desktop_runtime() and engine_id in _STRICTLY_LOCAL_ENGINE_IDS:
+        return ("network_diagnostics",)
+    return ()
+
 
 @dataclass
 class SecurityContext:
@@ -57,6 +76,7 @@ def setup_security(
                 scan_input=config.security.scan_input,
                 scan_output=config.security.scan_output,
                 bus=bus,
+                pii_passthrough_tools=_desktop_pii_passthrough_tools(engine),
             )
     except Exception as exc:
         logger.debug("Failed to set up security scanners: %s", exc)

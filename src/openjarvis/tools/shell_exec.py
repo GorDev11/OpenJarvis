@@ -147,34 +147,11 @@ class ShellExecTool(BaseTool):
             if val is not None:
                 env[key] = val
 
-        try:
-            from openjarvis._rust_bridge import get_rust_module
-
-            _rust = get_rust_module()
-            output = _rust.ShellExecTool().execute(command, working_dir)
-            return ToolResult(
-                tool_name="shell_exec",
-                content=output or "(no output)",
-                success=True,
-                metadata={
-                    "returncode": 0,
-                    "timeout_used": timeout,
-                    "working_dir": working_dir,
-                },
-            )
-        except ImportError:
-            pass  # Fall through to subprocess below
-        except Exception as exc:
-            return ToolResult(
-                tool_name="shell_exec",
-                content=str(exc),
-                success=False,
-                metadata={
-                    "returncode": -1,
-                    "timeout_used": timeout,
-                    "working_dir": working_dir,
-                },
-            )
+        # Keep one authoritative execution path.  The former Rust shortcut
+        # ignored timeout, the sanitized environment and output caps, and it
+        # reported every completed command as return code 0.  That made a
+        # failed or wedged command look successful and bypassed the security
+        # contract documented by this tool.
         try:
             result = subprocess.run(
                 command,

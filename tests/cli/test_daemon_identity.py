@@ -31,10 +31,11 @@ def linux_process(tmp_path, monkeypatch):
     read_bytes = Path.read_bytes
 
     def proc_text(path, *args, **kwargs):
-        if str(path).startswith("/proc/"):
+        normalized = str(path).replace("\\", "/")
+        if normalized.startswith("/proc/"):
             if not process["readable"]:
                 raise PermissionError("procfs unavailable")
-            if str(path) == "/proc/sys/kernel/random/boot_id":
+            if normalized == "/proc/sys/kernel/random/boot_id":
                 return process["boot_id"] + "\n"
             if path.name == "stat" and path.parent.name.isdecimal():
                 pid = int(path.parent.name)
@@ -45,7 +46,7 @@ def linux_process(tmp_path, monkeypatch):
         return read_text(path, *args, **kwargs)
 
     def proc_bytes(path, *args, **kwargs):
-        if str(path).startswith("/proc/"):
+        if str(path).replace("\\", "/").startswith("/proc/"):
             if not process["readable"]:
                 raise PermissionError("procfs unavailable")
             assert path.name == "cmdline"
@@ -197,7 +198,7 @@ def test_legacy_migration_rechecks_identity_after_reading_command(
 
     def recycled_after_read(path, *args, **kwargs):
         result = read_bytes(path, *args, **kwargs)
-        if str(path) == "/proc/4321/cmdline":
+        if str(path).replace("\\", "/") == "/proc/4321/cmdline":
             linux_process["starts"][4321] += 1
         return result
 
@@ -251,6 +252,9 @@ def test_child_promotion_preserves_the_child_identity(linux_process):
 def test_non_linux_legacy_liveness_is_unchanged(linux_process, monkeypatch, platform):
     # The mocked lock must still use this test host's filesystem locking API.
     monkeypatch.setattr(daemon_cmd.sys, "platform", platform)
+    monkeypatch.setattr(
+        daemon_cmd, "_registered_ready_listener_alive", lambda pid: True
+    )
     linux_process["readable"] = False
     daemon_cmd._write_pid(4321, "127.0.0.1", 8899)
 

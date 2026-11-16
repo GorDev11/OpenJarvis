@@ -145,11 +145,15 @@ class TestToolTimeout:
                     timeout_seconds=0.01,
                 )
 
-        executor = ToolExecutor([BrieflyStuckTool(delay=0.3)])
+        # Keep workers occupied long enough for this assertion to remain
+        # deterministic on Windows under a heavily loaded full-suite run.
+        executor = ToolExecutor([BrieflyStuckTool(delay=1.0)])
         results = [
             executor.execute(ToolCall(id=str(i), name="slow_tool", arguments="{}"))
             for i in range(24)
         ]
+        # Let the process-wide daemon runner drain before later tests use it.
+        time.sleep(1.1)
 
         workers = [
             thread

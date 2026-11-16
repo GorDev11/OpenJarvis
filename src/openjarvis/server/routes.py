@@ -588,16 +588,18 @@ def _get_agent_model_lock(agent: Any) -> threading.Lock:
         return lock
 
 
-def _handle_agent(
+def _run_agent_result(
     agent,
     model: str,
     req: ChatCompletionRequest,
-    complexity_info=None,
     *,
     trace_store=None,
     bus=None,
-) -> ChatCompletionResponse:
-    """Run through agent.
+    stream_callback=None,
+    stream_event_loop=None,
+    stream_cancel_event=None,
+) -> Any:
+    """Run the configured agent and return its native ``AgentResult``.
 
     When *trace_store* is set, the agent run is wrapped in a
     ``TraceCollector`` (mirroring ``system/orchestrator.py``) so every
@@ -617,6 +619,13 @@ def _handle_agent(
 
     # Last message is the input
     input_text = req.messages[-1].content if req.messages else ""
+    run_kwargs = {}
+    if stream_callback is not None and getattr(agent, "supports_live_stream", False):
+        run_kwargs = {
+            "stream_callback": stream_callback,
+            "stream_event_loop": stream_event_loop,
+            "stream_cancel_event": stream_cancel_event,
+        }
 
     # Override agent model for this request if the caller specified one.
     # Locked for the full override-run-restore cycle (#759): only the
@@ -631,11 +640,32 @@ def _handle_agent(
                 from openjarvis.traces.collector import TraceCollector
 
                 collector = TraceCollector(agent, store=trace_store, bus=bus)
-                result = collector.run(input_text, context=ctx)
+                result = collector.run(input_text, context=ctx, **run_kwargs)
             else:
-                result = agent.run(input_text, context=ctx)
+                result = agent.run(input_text, context=ctx, **run_kwargs)
         finally:
             agent._model = original_model
+
+    return result
+
+
+def _handle_agent(
+    agent,
+    model: str,
+    req: ChatCompletionRequest,
+    complexity_info=None,
+    *,
+    trace_store=None,
+    bus=None,
+) -> ChatCompletionResponse:
+    """Run through agent and convert its native result to the HTTP schema."""
+    result = _run_agent_result(
+        agent,
+        model,
+        req,
+        trace_store=trace_store,
+        bus=bus,
+    )
 
     usage = UsageInfo(
         prompt_tokens=result.metadata.get("prompt_tokens", 0),
@@ -681,88 +711,32 @@ async def _handle_agent_stream(
     bus=None,
     memory_service=None,
 ):
-    """Run the configured agent and return its result as an SSE response.
-
-    Agents own the tool-execution loop, which is synchronous today.  Run that
-    loop in a worker thread and stream its final answer once complete.  This
-    keeps ``stream:true`` clients (including the desktop UI) on the same agent
-    and configured toolkit as non-streaming requests instead of bypassing the
-    agent and silently dropping server-side tools.
-
-    Requests that explicitly supply OpenAI ``tools`` continue to use
-    ``_handle_stream_tools`` so their raw tool-call deltas are preserved.
-    """
-    chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+    """Run the configured agent through the live EventBus-to-SSE bridge."""
     query_text = ""
     for message in reversed(req.messages):
         if message.role == "user" and message.content:
             query_text = message.content
             break
 
-    async def generate():
-        first_chunk = ChatCompletionChunk(
-            id=chunk_id,
-            model=model,
-            choices=[StreamChoice(delta=DeltaMessage(role="assistant"))],
+    from openjarvis.core.events import EventBus
+    from openjarvis.server.stream_bridge import AgentStreamBridge
+
+    event_bus = bus or EventBus()
+    stream_event_loop = asyncio.get_running_loop()
+
+    def _runner(_emit_content, cancel_event):
+        return _run_agent_result(
+            agent,
+            model,
+            req,
+            trace_store=trace_store,
+            bus=event_bus,
+            stream_callback=_emit_content,
+            stream_event_loop=stream_event_loop,
+            stream_cancel_event=cancel_event,
         )
-        yield f"data: {first_chunk.model_dump_json()}\n\n"
 
-        try:
-            response = await asyncio.to_thread(
-                _handle_agent,
-                agent,
-                model,
-                req,
-                complexity_info,
-                trace_store=trace_store,
-                bus=bus,
-            )
-        except Exception as exc:
-            logging.getLogger("openjarvis.server").error(
-                "Agent stream error: %s",
-                exc,
-                exc_info=True,
-            )
-            error_chunk = ChatCompletionChunk(
-                id=chunk_id,
-                model=model,
-                choices=[
-                    StreamChoice(
-                        delta=DeltaMessage(
-                            content=f"Sorry, an error occurred: {exc}",
-                        ),
-                        finish_reason="stop",
-                    )
-                ],
-            )
-            yield f"data: {error_chunk.model_dump_json()}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        content = _response_content(response)
-        if content:
-            content_chunk = ChatCompletionChunk(
-                id=chunk_id,
-                model=model,
-                choices=[StreamChoice(delta=DeltaMessage(content=content))],
-            )
-            yield f"data: {content_chunk.model_dump_json()}\n\n"
-
-        import json as _json
-
-        finish_chunk = ChatCompletionChunk(
-            id=chunk_id,
-            model=model,
-            choices=[
-                StreamChoice(delta=DeltaMessage(), finish_reason="stop"),
-            ],
-        )
-        finish_data = _json.loads(finish_chunk.model_dump_json())
-        finish_data["usage"] = response.usage.model_dump()
-        if complexity_info is not None:
-            finish_data["complexity"] = complexity_info.model_dump()
-        yield f"data: {_json.dumps(finish_data)}\n\n"
-
+    def _on_complete(content: str) -> None:
         _record_completed_exchange(
             memory_service,
             query_text,
@@ -770,10 +744,18 @@ async def _handle_agent_stream(
             bus=bus,
             source="server.chat.stream",
         )
-        yield "data: [DONE]\n\n"
 
+    bridge = AgentStreamBridge(
+        agent,
+        event_bus,
+        model,
+        req,
+        runner=_runner,
+        complexity_info=complexity_info,
+        on_complete=_on_complete,
+    )
     return StreamingResponse(
-        generate(),
+        bridge.stream(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )

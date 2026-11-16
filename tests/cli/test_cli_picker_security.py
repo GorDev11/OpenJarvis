@@ -155,7 +155,21 @@ class TestAgentEngineOptionsIsolation:
             "m",
             engine_options={"num_ctx": 8192, "evil": "payload"},
         )
-        assert _ALLOWED_ENGINE_OPTION_KEYS == frozenset({"num_ctx", "num_gpu"})
+        assert _ALLOWED_ENGINE_OPTION_KEYS == frozenset(
+            {
+                "min_p",
+                "num_ctx",
+                "num_gpu",
+                "num_thread",
+                "repeat_last_n",
+                "repeat_penalty",
+                "repetition_penalty",
+                "seed",
+                "stop",
+                "top_k",
+                "top_p",
+            }
+        )
         agent._generate([Message(role=Role.USER, content="hi")])
         call_kwargs = engine.generate.call_args[1]
         assert "evil" not in call_kwargs

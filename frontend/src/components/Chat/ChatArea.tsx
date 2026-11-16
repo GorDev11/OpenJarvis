@@ -6,6 +6,7 @@ import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
 import { shouldAutoplayFinishedReply, useTtsStore } from '../../lib/tts';
 import { stripThinkTags } from '../../lib/message-text';
+import { takeStableStreamingSpeech, finishStreamingSpeech } from '../../lib/streaming-speech';
 import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
 
@@ -42,6 +43,79 @@ export function ChatArea() {
     if (!voiceOutputEnabled) return;
     useTtsStore.getState().ensureHealth();
   }, [voiceOutputEnabled]);
+
+  // Start speech when the first completed sentence arrives, not at the end of
+  // the assistant's entire response. The shared TTS store queues/prefetches
+  // subsequent WAVs while the model is still generating text.
+  const voiceBackend = useTtsStore((s) => s.backend);
+  const voiceAvailable = useTtsStore((s) => s.available);
+  const liveVoiceRef = useRef<{
+    conversationId: string; messageId: string; consumed: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const tts = useTtsStore.getState();
+    const last = messages[messages.length - 1];
+    const streamingHere = streamState.isStreaming && streamState.conversationId === activeId;
+    const allowed = voiceOutputEnabled && voiceAutoplay
+      && voiceAvailable === true && voiceBackend === 'armenian_pocket';
+
+    const previous = liveVoiceRef.current;
+    if (previous && (!streamingHere || !allowed
+      || previous.conversationId !== activeId || previous.messageId !== last?.id)) {
+      liveVoiceRef.current = null;
+      if (!streamingHere && allowed
+        && last !== undefined && previous.conversationId === activeId
+        && previous.messageId === last.id && last.role === 'assistant' && tts.speakingId === previous.messageId) {
+        const tail = finishStreamingSpeech(last.content, previous.consumed);
+        if (tail) void tts.appendLive(previous.messageId, tail);
+        tts.finishLive(previous.messageId);
+        // Prevent finished-message autoplay from reading everything again.
+        tts.markAutoSpoken(previous.messageId);
+      } else {
+        if (tts.speakingId === previous.messageId) tts.stop();
+        tts.markAutoSpoken(previous.messageId);
+      }
+    }
+
+    if (!streamingHere || !allowed || !last || last.role !== 'assistant' || !activeId) return;
+    const prior = liveVoiceRef.current;
+    const cursor = prior && prior.messageId === last.id ? prior.consumed : 0;
+    const progress = takeStableStreamingSpeech(streamState.content, cursor);
+    if (!progress.chunks.length) return;
+
+    if (!prior || prior.messageId !== last.id) {
+      tts.beginLive(last.id);
+      liveVoiceRef.current = { conversationId: activeId, messageId: last.id, consumed: 0 };
+    }
+    for (const sentence of progress.chunks) void tts.appendLive(last.id, sentence);
+    if (liveVoiceRef.current) liveVoiceRef.current.consumed = progress.consumed;
+  }, [
+    activeId, messages, streamState.isStreaming, streamState.conversationId,
+    streamState.content, voiceOutputEnabled, voiceAutoplay, voiceBackend, voiceAvailable,
+  ]);
+
+  // Switching conversations must also stop a finished reply's read-aloud,
+  // not just the partially generated one.
+  const previousActiveId = useRef(activeId);
+  useEffect(() => {
+    if (previousActiveId.current !== activeId) {
+      const tts = useTtsStore.getState();
+      if (tts.speakingId) tts.stop();
+    }
+    previousActiveId.current = activeId;
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!voiceOutputEnabled && useTtsStore.getState().speakingId) {
+      useTtsStore.getState().stop();
+    }
+  }, [voiceOutputEnabled]);
+
+  // No audio session should survive leaving the chat screen.
+  useEffect(() => () => {
+    if (useTtsStore.getState().speakingId) useTtsStore.getState().stop();
+  }, []);
 
   // Speak on the falling edge of a stream -- the moment a reply finishes -- and
   // never merely because a finished reply happens to be on screen. Opening the

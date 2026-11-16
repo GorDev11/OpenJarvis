@@ -44,3 +44,4 @@ keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+armenian-preview = []

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -179,6 +180,9 @@ def test_other_launch_cannot_claim_live_pending_pid(state_dir, monkeypatch):
 
 def test_same_launch_cannot_replace_ready_server(state_dir, monkeypatch):
     monkeypatch.setattr(daemon_cmd, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(
+        daemon_cmd, "_registered_ready_listener_alive", lambda pid: True
+    )
     daemon_cmd._write_pid(4321, "127.0.0.1", 8899, launch_token="launch-a")
 
     with pytest.raises(RuntimeError, match="Another server is already registered"):
@@ -189,6 +193,9 @@ def test_same_launch_cannot_replace_ready_server(state_dir, monkeypatch):
 
 def test_other_launcher_cannot_replace_ready_server(state_dir, monkeypatch):
     monkeypatch.setattr(daemon_cmd, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(
+        daemon_cmd, "_registered_ready_listener_alive", lambda pid: True
+    )
     daemon_cmd._write_pid(9876, "127.0.0.1", 8899, launch_token="launch-a")
 
     with pytest.raises(RuntimeError, match="Another server is already registered"):
@@ -198,6 +205,19 @@ def test_other_launcher_cannot_replace_ready_server(state_dir, monkeypatch):
 
     assert daemon_cmd._read_pid_file() == 9876
     assert daemon_cmd._read_state()["port"] == 8899
+
+
+def test_shutting_down_ready_process_can_be_replaced(state_dir, monkeypatch):
+    daemon_cmd._write_pid(4321, "127.0.0.1", 8899, launch_token="launch-a")
+    monkeypatch.setattr(daemon_cmd, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(
+        daemon_cmd, "_registered_ready_listener_alive", lambda pid: False
+    )
+
+    daemon_cmd._write_pid(9876, "127.0.0.1", 8899, launch_token="launch-b")
+
+    assert daemon_cmd._read_pid_file() == 9876
+    assert daemon_cmd._read_state()["pid"] == 9876
 
 
 def test_pending_start_does_not_claim_an_address_is_listening(state_dir, monkeypatch):
@@ -214,6 +234,9 @@ def test_pending_start_does_not_claim_an_address_is_listening(state_dir, monkeyp
 def test_restart_passes_the_recorded_address_to_start(state_dir, monkeypatch):
     daemon_cmd.record_server_state(999, "127.0.0.1", 8899)
     monkeypatch.setattr(daemon_cmd, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(
+        daemon_cmd, "_registered_ready_listener_alive", lambda pid: True
+    )
     started = []
     monkeypatch.setattr(daemon_cmd.stop, "callback", lambda: None)
     monkeypatch.setattr(
@@ -225,6 +248,44 @@ def test_restart_passes_the_recorded_address_to_start(state_dir, monkeypatch):
     assert result.exit_code == 0
     assert started[0]["host"] == "127.0.0.1"
     assert started[0]["port"] == 8899
+
+
+def test_windows_ready_registration_without_listener_is_reclaimed(
+    state_dir, monkeypatch
+):
+    import psutil
+
+    daemon_cmd.record_server_state(999, "127.0.0.1", 8899)
+    monkeypatch.setattr(daemon_cmd.sys, "platform", "win32")
+    monkeypatch.setattr(daemon_cmd, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(
+        psutil,
+        "Process",
+        lambda pid: SimpleNamespace(net_connections=lambda **kwargs: []),
+    )
+
+    assert daemon_cmd._read_pid() is None
+    assert not (state_dir / "server.pid").exists()
+    assert not (state_dir / "server.json").exists()
+
+
+def test_windows_ready_registration_keeps_matching_listener(state_dir, monkeypatch):
+    import psutil
+
+    daemon_cmd.record_server_state(999, "127.0.0.1", 8899)
+    listener = SimpleNamespace(
+        status=psutil.CONN_LISTEN,
+        laddr=SimpleNamespace(port=8899),
+    )
+    monkeypatch.setattr(daemon_cmd.sys, "platform", "win32")
+    monkeypatch.setattr(daemon_cmd, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(
+        psutil,
+        "Process",
+        lambda pid: SimpleNamespace(net_connections=lambda **kwargs: [listener]),
+    )
+
+    assert daemon_cmd._read_pid() == 999
 
 
 def test_cleanup_waits_for_in_progress_registration(state_dir, monkeypatch):

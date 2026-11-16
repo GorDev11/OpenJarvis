@@ -73,6 +73,9 @@ def test_failed_bind_does_not_overwrite_an_existing_server(state_dir):
 def test_second_live_server_cannot_replace_registered_owner(state_dir, monkeypatch):
     daemon_cmd.record_server_state(999999, "127.0.0.1", 8899)
     monkeypatch.setattr(daemon_cmd, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(
+        daemon_cmd, "_registered_ready_listener_alive", lambda pid: True
+    )
 
     with pytest.raises(RuntimeError, match="already registered"):
         run_server(FastAPI(), host="127.0.0.1", port=0, log_level="error")

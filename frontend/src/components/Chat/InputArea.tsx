@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Square, Paperclip, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
+import { useTtsStore } from '../../lib/tts';
 import { streamChat, streamResearch } from '../../lib/sse';
 import { fetchSavings, getBase } from '../../lib/api';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
@@ -115,14 +116,21 @@ export function InputArea() {
   // This prevents errors from trying to continue a stream with a stale model.
   const prevModelRef = useRef(selectedModel);
   useEffect(() => {
-    if (prevModelRef.current !== selectedModel && streamState.isStreaming) {
-      abortRef.current?.abort();
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
+    if (prevModelRef.current !== selectedModel) {
+      if (streamState.isStreaming) {
+        abortRef.current?.abort();
+        const allMessages = useAppStore.getState().messages;
+        const current = allMessages[allMessages.length - 1];
+        if (current?.role === 'assistant') useTtsStore.getState().markAutoSpoken(current.id);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        resetStream();
+        abortRef.current = null;
       }
-      resetStream();
-      abortRef.current = null;
+      // Also interrupt speech from a reply that had already finished.
+      useTtsStore.getState().stop();
     }
     prevModelRef.current = selectedModel;
   }, [selectedModel, streamState.isStreaming, resetStream]);
@@ -163,6 +171,10 @@ export function InputArea() {
   }, [input]);
 
   const stopStreaming = useCallback(() => {
+    const allMessages = useAppStore.getState().messages;
+    const last = allMessages[allMessages.length - 1];
+    if (last?.role === 'assistant') useTtsStore.getState().markAutoSpoken(last.id);
+    useTtsStore.getState().stop();
     abortRef.current?.abort();
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -179,6 +191,8 @@ export function InputArea() {
       return;
     }
 
+    // A new user request always interrupts any remaining assistant audio.
+    useTtsStore.getState().stop();
     setInput('');
 
     let convId = activeId;

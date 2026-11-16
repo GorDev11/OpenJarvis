@@ -237,10 +237,63 @@ def _read_pid_unlocked() -> int | None:
     if pid is None:
         _PID_FILE.unlink(missing_ok=True)
         return None
-    if not _registered_pid_alive(pid):
+    if not _registered_pid_alive(pid) or not _registered_ready_listener_alive(pid):
         _clear_state_unlocked(pid)
         return None
     return pid
+
+
+def _registered_ready_listener_alive(pid: int) -> bool:
+    """Return whether a ready registration still owns its listening socket.
+
+    A process can remain alive briefly after Uvicorn has closed its listener,
+    especially when the Windows desktop launcher is tearing down a ``uv``
+    process tree.  Treating that shutting-down PID as a live server makes an
+    immediate desktop relaunch fail with ``Another server is already
+    registered`` even though the requested port is already free.
+
+    Pending registrations are deliberately exempt: they have not opened a
+    socket yet.  If psutil cannot inspect a ready process, fail closed and keep
+    the registration rather than risking two live servers.
+    """
+    if sys.platform != "win32":
+        return True
+
+    state = _read_state()
+    if state.get("pid") != pid or state.get("ready", True) is False:
+        return True
+    port = state.get("port")
+    if type(port) is not int or port <= 0:
+        return True
+
+    try:
+        import psutil
+    except ImportError:
+        return True
+
+    try:
+        connections = psutil.Process(pid).net_connections(kind="inet")
+    except psutil.NoSuchProcess:
+        return False
+    except Exception:
+        # AccessDenied and platform-specific inspection failures are not
+        # authoritative, so preserve the registration for them.
+        return True
+
+    for connection in connections:
+        if connection.status != psutil.CONN_LISTEN:
+            continue
+        local_address = connection.laddr
+        local_port = getattr(local_address, "port", None)
+        if (
+            local_port is None
+            and isinstance(local_address, tuple)
+            and len(local_address) > 1
+        ):
+            local_port = local_address[1]
+        if local_port == port:
+            return True
+    return False
 
 
 def _read_pid() -> int | None:
@@ -286,7 +339,12 @@ def _write_pid_unlocked(
         # The server may have bound before its launcher recorded pending state.
         # Keep the actual PID and bound address in either ordering.
         return
-    if existing is not None and existing != pid and _registered_pid_alive(existing):
+    existing_is_active = (
+        existing is not None
+        and _registered_pid_alive(existing)
+        and _registered_ready_listener_alive(existing)
+    )
+    if existing is not None and existing != pid and existing_is_active:
         if not (ready and same_launch and current.get("ready") is False):
             raise RuntimeError(f"Another server is already registered (PID {existing})")
     identity = _linux_process_identity(pid)

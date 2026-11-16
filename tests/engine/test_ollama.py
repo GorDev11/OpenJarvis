@@ -67,6 +67,50 @@ class TestOllamaGenerate:
                     [Message(role=Role.USER, content="Hi")], model="qwen3:8b"
                 )
 
+    def test_generate_retries_only_explicit_tool_capability_rejection(
+        self, engine: OllamaEngine
+    ) -> None:
+        calls: list[bool] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            calls.append("tools" in payload)
+            if "tools" in payload:
+                return httpx.Response(400, text="model does not support tools")
+            return httpx.Response(
+                200,
+                json={"message": {"content": "fallback"}},
+            )
+
+        with respx.mock:
+            respx.post("http://testhost:11434/api/chat").mock(side_effect=handler)
+            result = engine.generate(
+                [Message(role=Role.USER, content="Hi")],
+                model="qwen3:8b",
+                tools=[{"type": "function", "function": {"name": "shell_exec"}}],
+            )
+
+        assert calls == [True, False]
+        assert result["content"] == "fallback"
+
+    def test_generate_does_not_hide_malformed_tool_schema(
+        self, engine: OllamaEngine
+    ) -> None:
+        with respx.mock:
+            route = respx.post("http://testhost:11434/api/chat").mock(
+                return_value=httpx.Response(
+                    400,
+                    text="invalid tools schema: missing type",
+                )
+            )
+            with pytest.raises(RuntimeError, match="invalid tools schema"):
+                engine.generate(
+                    [Message(role=Role.USER, content="Hi")],
+                    model="qwen3:8b",
+                    tools=[{"type": "function", "function": {"name": "shell_exec"}}],
+                )
+            assert route.call_count == 1
+
 
 @requires_respx
 class TestOllamaListModels:
@@ -506,3 +550,24 @@ class TestOllamaStreamHttpErrorMapping:
         # First request had tools (400), second retried without them (200).
         assert calls == [True, False]
         assert any(c.content == "recovered" for c in chunks)
+
+    @pytest.mark.asyncio
+    async def test_400_malformed_tools_does_not_retry_without_them(self) -> None:
+        calls = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            return httpx.Response(400, text="invalid tools schema: bad parameters")
+
+        engine = OllamaEngine(host="http://localhost:11434")
+        engine._async_transport = httpx.MockTransport(handler)
+
+        with pytest.raises(EngineConnectionError, match="invalid tools schema"):
+            async for _ in engine.stream_full(
+                [Message(role=Role.USER, content="Hi")],
+                model="qwen3:8b",
+                tools=[{"type": "function", "function": {"name": "shell_exec"}}],
+            ):
+                pass
+        assert calls == 1
