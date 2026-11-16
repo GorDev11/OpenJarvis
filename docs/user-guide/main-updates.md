@@ -115,3 +115,14 @@ Expected observations:
 - Once the backend is healthy again, the success state clears itself.
 
 This test does not alter application source, settings, models or secrets.
+
+## Third live-update detection test — from f6eea23
+
+This documentation-only commit tests detection of a new GitHub main SHA by an
+already-running Armenian Preview whose local source is at `f6eea23`.
+
+Expected observable outcome: without pressing any check button, the desktop
+shows a compact **Նոր թարմացում կա** card with a **Թարմացնել / Update**
+action. Applying it is a separate user decision; no automatic installation
+should happen. The test intentionally does not change executable code,
+Python application behavior, models, credentials, or settings.
