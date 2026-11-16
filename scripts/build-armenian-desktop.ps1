@@ -34,18 +34,10 @@ if (-not (Test-Path $previewConfig)) {
     throw "Preview Tauri config missing. Pull feature/armenian-voice first."
 }
 $branch = (& git branch --show-current 2>$null).Trim()
-$isPreviewLineage = $branch -eq "feature/armenian-voice"
-foreach ($previewRef in @("feature/armenian-voice", "origin/feature/armenian-voice")) {
-    if ($isPreviewLineage) { break }
-    & git rev-parse --verify --quiet $previewRef *> $null
-    if ($LASTEXITCODE -eq 0) {
-        & git merge-base --is-ancestor $previewRef HEAD
-        $isPreviewLineage = $LASTEXITCODE -eq 0
-    }
+if ($branch -ne "main") {
+    throw "Expected main branch, found '$branch'. Use main for all future builds."
 }
-if (-not $isPreviewLineage) {
-    throw "Branch '$branch' is not based on feature/armenian-voice. Pull that branch first."
-}
+Write-Host ("Using GitHub main: " + (& git rev-parse --short HEAD))
 Write-Host ("Node: " + ((& node --version) -join ""))
 Write-Host ("npm: " + ((& npm.cmd --version) -join ""))
 Write-Host ("Rust: " + ((& rustc --version) -join ""))
@@ -81,7 +73,7 @@ try {
     Run-Checked "npm.cmd" @("ci")
     if (-not $SkipTests) { Run-Checked "npm.cmd" @("test") }
     Run-Checked "npm.cmd" @("run", "build")
-    # Tauri calls npm run build:tauri; NSIS creates an isolated installer.
+    # Tauri builds the isolated preview against the canonical main branch.
     Run-Checked "npx.cmd" @(
         "tauri", "build", "--bundles", "nsis",
         "--config", "src-tauri/tauri.armenian-preview.conf.json"
