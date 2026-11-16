@@ -35,6 +35,7 @@ import {
   type InferenceSource,
   type MemoryStats,
 } from '../lib/api';
+import { MainSourceUpdate } from '../components/Desktop/MainSourceUpdate';
 import {
   isAutoUpdateDisabled,
   isUpdaterBuildDisabled,
@@ -929,6 +930,9 @@ export function SettingsPage() {
 
           {/* Updates */}
           <Section title="Updates">
+            <SettingRow label="GitHub main updates" description="Check for new OpenJarvis backend source without PowerShell.">
+              <MainSourceUpdate compact />
+            </SettingRow>
             <SettingRow
               label="Auto-update"
               description={updaterBuildDisabled
