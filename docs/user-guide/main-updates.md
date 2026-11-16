@@ -80,3 +80,12 @@ No third-party server is terminated. A foreign listener on the Preview's
 dedicated port is rejected rather than silently adopted. An explicitly
 configured custom API URL in Settings still takes precedence.
 A new Preview installer is needed for this native Rust change.
+
+## Desktop update detection smoke test
+
+A documentation-only commit was created on 2026-11-17 to exercise the
+Armenian Preview's GitHub `main` update banner and its 15-second check.
+No application code, model configuration, API keys, or Windows settings
+were changed. Once this commit is detected, selecting **Թարմացնել / Update**
+should fast-forward the installation-scoped source checkout and restart
+the managed Python backend if its working tree is clean.
