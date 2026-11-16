@@ -78,15 +78,9 @@ def test_unified_update_card_downloads_signed_binary_then_syncs_backend() -> Non
 
 
 def test_only_one_visible_update_card_and_preview_cannot_install_binary() -> None:
-    app = (ROOT / "frontend" / "src" / "App.tsx").read_text(
-        encoding="utf-8"
-    )
-    preferences = (FRONTEND / "UpdateChecker.tsx").read_text(
-        encoding="utf-8"
-    )
-    widget = (FRONTEND / "MainSourceUpdate.tsx").read_text(
-        encoding="utf-8"
-    )
+    app = (ROOT / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
+    preferences = (FRONTEND / "UpdateChecker.tsx").read_text(encoding="utf-8")
+    widget = (FRONTEND / "MainSourceUpdate.tsx").read_text(encoding="utf-8")
     assert "<UpdateChecker />" not in app
     assert "export function UpdateChecker()" not in preferences
     assert "isUpdaterBuildDisabled()" in widget
