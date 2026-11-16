@@ -33,6 +33,7 @@ import {
   deleteToolCredential,
   isTauri,
   getBase,
+  normalizeApiBaseUrl,
   type InferenceSource,
   type MemoryStats,
 } from '../lib/api';
@@ -546,6 +547,12 @@ export function SettingsPage() {
                 type="text"
                 value={settings.apiUrl}
                 onChange={(e) => { updateSettings({ apiUrl: e.target.value }); showSaved(); }}
+                onBlur={() => {
+                  const normalized = normalizeApiBaseUrl(settings.apiUrl);
+                  if (normalized && normalized !== settings.apiUrl) {
+                    updateSettings({ apiUrl: normalized });
+                  }
+                }}
                 placeholder={isTauri() ? getBase() : "http://localhost:8000"}
                 className="text-sm px-3 py-1.5 rounded-lg outline-none w-56"
                 style={{

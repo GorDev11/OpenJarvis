@@ -136,3 +136,26 @@ describe('tool credentials', () => {
     );
   });
 });
+
+
+describe('normalizeApiBaseUrl', () => {
+  it('adds the missing protocol for a local Preview API URL', async () => {
+    const { normalizeApiBaseUrl, getBase } = await freshApi();
+    expect(normalizeApiBaseUrl('127.0.0.1:18761')).toBe('http://127.0.0.1:18761');
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ apiUrl: '127.0.0.1:18761' }));
+    expect(getBase()).toBe('http://127.0.0.1:18761');
+  });
+
+  it('normalizes local URLs and preserves explicit HTTPS endpoints', async () => {
+    const { normalizeApiBaseUrl } = await freshApi();
+    expect(normalizeApiBaseUrl(' localhost:8000/ ')).toBe('http://localhost:8000');
+    expect(normalizeApiBaseUrl('https://example.com/v1/')).toBe('https://example.com/v1');
+  });
+
+  it('rejects malformed or unsupported API URLs', async () => {
+    const { normalizeApiBaseUrl } = await freshApi();
+    expect(normalizeApiBaseUrl('')).toBe('');
+    expect(normalizeApiBaseUrl('file:///tmp/test')).toBe('');
+    expect(normalizeApiBaseUrl('http://')).toBe('');
+  });
+});

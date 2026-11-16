@@ -57,12 +57,29 @@ export async function initApiBase(): Promise<void> {
 
 const DESKTOP_API_FALLBACK = 'http://127.0.0.1:8000';
 
+/** Convert host:port input from Settings into a valid HTTP(S) API URL. */
+export function normalizeApiBaseUrl(input: string): string {
+  const raw = input.trim();
+  if (!raw) return '';
+  const candidate = raw.includes('://') ? raw : `http://${raw}`;
+  try {
+    const parsed = new URL(candidate);
+    if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
+      return '';
+    }
+    if (parsed.username || parsed.password) return '';
+    return parsed.href.replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
 const getSettingsApiUrl = (): string => {
   try {
     const raw = localStorage.getItem('openjarvis-settings');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.apiUrl) return parsed.apiUrl.replace(/\/+$/, '');
+      if (parsed.apiUrl) return normalizeApiBaseUrl(String(parsed.apiUrl));
     }
   } catch {}
   return '';
