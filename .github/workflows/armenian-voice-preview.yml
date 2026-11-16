@@ -52,6 +52,13 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: frontend/src-tauri -> target
+      - name: Prepare Tauri frontend for Rust tests
+        working-directory: frontend
+        run: npm run build:tauri:armenian-preview
+      - name: Confirm frontend dist exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "frontend/dist/index.html")) { throw "Missing frontend/dist/index.html" }
       - name: Preview launcher unit tests
         working-directory: frontend/src-tauri
         run: cargo test --lib --features armenian-preview

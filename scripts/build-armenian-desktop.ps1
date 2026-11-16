@@ -58,10 +58,6 @@ if (-not $SkipTests) {
         "tests/speech/test_armenian_pocket_tts.py",
         "-q"
     )
-    Run-Checked "cargo" @(
-        "test", "--manifest-path", (Join-Path $frontend "src-tauri\Cargo.toml"),
-        "--lib", "--features", "armenian-preview"
-    )
 }
 
 $gpu = & (Join-Path $project ".venv\Scripts\python.exe") -c "import torch; print(torch.cuda.is_available())"
@@ -73,6 +69,18 @@ try {
     Run-Checked "npm.cmd" @("ci")
     if (-not $SkipTests) { Run-Checked "npm.cmd" @("test") }
     Run-Checked "npm.cmd" @("run", "build")
+    # Tauri Rust tests require frontend/dist, unlike the Python server build above.
+    Run-Checked "npm.cmd" @("run", "build:tauri:armenian-preview")
+    if (-not (Test-Path (Join-Path $frontend "dist\index.html"))) {
+        throw "Tauri frontend assets are missing: frontend/dist/index.html"
+    }
+    if (-not $SkipTests) {
+    Run-Checked "cargo" @(
+        "test", "--manifest-path", (Join-Path $frontend "src-tauri\Cargo.toml"),
+        "--lib", "--features", "armenian-preview"
+    )
+
+    }
     # Tauri builds the isolated preview against the canonical main branch.
     Run-Checked "npx.cmd" @(
         "tauri", "build", "--bundles", "nsis",

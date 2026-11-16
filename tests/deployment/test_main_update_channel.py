@@ -72,3 +72,11 @@ def test_signed_desktop_update_downloads_then_syncs_then_installs() -> None:
     )
     assert "event.event === 'Started'" in handler
     assert "event.data?.contentLength" in handler
+
+
+def test_signed_rust_tests_require_built_tauri_assets() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert workflow.index("npm run build:tauri:armenian-release") < workflow.index(
+        "cargo test --lib --features armenian-preview"
+    )
+    assert "frontend/dist/index.html" in workflow
