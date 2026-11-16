@@ -173,40 +173,73 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <div role="alert" aria-live="assertive" className="flex flex-wrap gap-3 items-center justify-between px-5 py-3"
-      style={{
-        background: 'var(--color-bg-secondary)',
-        borderBottom: '2px solid var(--color-accent)',
-        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.10)',
-      }}>
-      <div className="flex gap-2 items-center text-sm">
-        {phase === 'updated' ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
-        <div>
-          <div className="font-semibold">
-            {phase === 'updated' ? 'Backend-ը թարմացվեց GitHub main-ից' : 'Նոր թարմացում կա · GitHub main'}
+    <div className="pointer-events-none flex shrink-0 justify-center px-3 pt-2 pb-1">
+      <div
+        role="status"
+        aria-live="polite"
+        className="pointer-events-auto flex w-full max-w-[520px] items-start gap-3 rounded-2xl border px-3 py-3 shadow-lg"
+        style={{
+          background: 'var(--color-surface)',
+          borderColor: 'var(--color-border)',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.10)',
+        }}
+      >
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+          style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
+        >
+          {phase === 'updated' ? <CheckCircle2 size={18} /> :
+            phase === 'updating' || phase === 'restarting'
+              ? <LoaderCircle size={18} className="animate-spin" />
+              : phase === 'error' ? <AlertTriangle size={18} /> : <Download size={18} />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                {phase === 'updated' ? 'Թարմացումը հաջող ավարտվեց'
+                  : phase === 'restarting' ? 'Backend-ը վերագործարկվում է'
+                    : phase === 'updating' ? 'Թարմացվում է OpenJarvis-ը'
+                      : phase === 'error' ? 'Թարմացման ընթացքում խնդիր առաջացավ'
+                        : 'Նոր թարմացում կա'}
+              </div>
+              <div className="mt-0.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                {phase === 'updating' ? 'GitHub main-ից ներբեռնվում է նոր կոդը...'
+                  : phase === 'restarting' ? 'Սպասում ենք Backend-ի կապի վերականգնմանը...'
+                    : phase === 'updated' ? 'Backend-ը կրկին հասանելի է։'
+                      : status
+                        ? <>GitHub main · {status.current_sha.slice(0, 7)} → {status.latest_sha.slice(0, 7)}</>
+                        : 'GitHub main'}
+              </div>
+            </div>
+            {phase !== 'updating' && phase !== 'restarting' && (
+              <button type="button" onClick={dismiss} aria-label="Փակել թարմացման ծանուցումը"
+                className="shrink-0 rounded-lg p-1.5 transition-opacity hover:opacity-60"
+                style={{ color: 'var(--color-text-tertiary)' }}>
+                <X size={14} />
+              </button>
+            )}
           </div>
-          <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-            {phase === 'updated'
-              ? 'Python backend is restarting. Compiled Desktop UI updates require a separate signed installer.'
-              : status
-                ? `Նոր commit՝ ${status.latest_sha.slice(0, 7)} (տեղադրված՝ ${status.current_sha.slice(0, 7)}). ${status.can_update ? 'Սեղմիր «Թարմացնել»՝ այն կիրառելու համար։' : status.message}`
-                : 'Cannot check for updates'}
-          </div>
-          {error && <div role="alert" className="text-xs" style={{ color: 'var(--color-error)' }}>{error}</div>}
+          {error && (
+            <p role="alert" className="mt-1 text-xs" style={{ color: 'var(--color-error)' }}>
+              {error}
+            </p>
+          )}
+          {(phase === 'available' || phase === 'error') && status?.update_available && (
+            <div className="mt-2 flex items-center gap-2">
+              <button type="button" onClick={() => void update()} disabled={!status.can_update}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                style={{ background: 'var(--color-accent)', color: 'white' }}>
+                <Download size={13} /> Թարմացնել / Update
+              </button>
+              {!status.can_update && (
+                <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {status.message}
+                </span>
+              )}
+            </div>
+          )}
         </div>
-      </div>
-      <div className="flex gap-2 items-center">
-        {(phase === 'available' || phase === 'error') && status?.update_available && (
-          <button type="button" onClick={() => void update()} disabled={!status.can_update}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
-            style={{ background: 'var(--color-accent)', color: 'var(--color-bg-primary)' }}>
-            <Download size={14} /> Թարմացնել / Update
-          </button>
-        )}
-        {phase === 'updating' && <span className="text-xs">Downloading from main and restarting...</span>}
-        {phase === 'updated' && <button type="button" onClick={() => void check()} className="text-xs underline">Check again</button>}
-        <button type="button" onClick={dismiss} aria-label="Dismiss GitHub update"
-          className="px-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Ավելի ուշ</button>
       </div>
     </div>
   );
