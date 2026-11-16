@@ -75,11 +75,10 @@ try {
         throw "Tauri frontend assets are missing: frontend/dist/index.html"
     }
     if (-not $SkipTests) {
-    Run-Checked "cargo" @(
-        "test", "--manifest-path", (Join-Path $frontend "src-tauri\Cargo.toml"),
-        "--lib", "--features", "armenian-preview"
-    )
-
+        Run-Checked "cargo" @(
+            "test", "--manifest-path", (Join-Path $frontend "src-tauri\Cargo.toml"),
+            "--lib", "--features", "armenian-preview"
+        )
     }
     # Tauri builds the isolated preview against the canonical main branch.
     Run-Checked "npx.cmd" @(

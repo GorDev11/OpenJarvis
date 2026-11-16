@@ -39,12 +39,14 @@ def test_local_preview_build_requires_main_branch() -> None:
 
 
 def test_preview_rust_tests_require_built_tauri_assets() -> None:
-    workflow = (ROOT / ".github/workflows/armenian-voice-preview.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/armenian-voice-preview.yml").read_text(
+        encoding="utf-8"
+    )
     assert workflow.index("npm run build:tauri:armenian-preview") < workflow.index(
         "cargo test --lib --features armenian-preview"
     )
     assert "frontend/dist/index.html" in workflow
+
     script = BUILD_SCRIPT.read_text(encoding="utf-8")
-    assert script.index('Run-Checked "npm.cmd" @("run", "build:tauri:armenian-preview")') < script.index(
-        'Run-Checked "cargo" @('
-    )
+    build_command = 'Run-Checked "npm.cmd" @("run", "build:tauri:armenian-preview")'
+    assert script.index(build_command) < script.index('Run-Checked "cargo" @(')
