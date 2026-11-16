@@ -1,0 +1,69 @@
+# OpenJarvis updates from `main`
+
+The canonical source of truth is now **GorDev11/OpenJarvis, branch `main`**.
+The earlier `feature/armenian-voice` checkout is supported **only for a
+one-time, fast-forward migration**; new work belongs on `main`.
+
+## In the Windows desktop app
+
+New preview builds of OpenJarvis Armenian Preview have a separate **GitHub
+main updates** indicator at the top of the chat and a manual **Check GitHub
+main** action in Settings → Updates.
+
+- On opening the app, and every 10 minutes while open, the desktop checks
+  `refs/heads/main` on `https://github.com/GorDev11/OpenJarvis.git`.
+- When a different commit is published, the UI offers **Թարմացնել / Update**.
+- Clicking updates only the **installed Python backend Git source** in the
+  install-scoped `src` checkout. The Desktop stops **only its owned**
+  server processes, fetches `main`, refuses to overwrite local modifications
+  or diverged history, fast-forwards, and starts the managed backend again.
+  Startup runs the normal dependency sync and readiness checks.
+- The first update can migrate the previous Preview's
+  `feature/armenian-voice` checkout to `main`.
+- Offline, Git, merge, or dependency errors are surfaced; the tool does not
+  reset, force-push, delete untracked files or run `git reset --hard`.
+
+**Desktop binary limitation:** Git source updates **cannot** replace the
+already installed Tauri `.exe`, its compiled React UI, or its tray menus.
+A new installer is required for changes to those parts. This application
+must not execute arbitrary unsigned code from GitHub on a timer. For
+fully automatic desktop binary replacement, provision a **separately
+signed Tauri update channel** for the owner's releases and verify its
+public key and signatures. Never point the Preview to the upstream
+`open-jarvis/OpenJarvis` updater or disable signature verification.
+
+The existing stable updater remains intentionally disabled in Armenian
+Preview until that *owner-controlled, signed* channel is configured.
+The source-update button works independently of desktop binary updates.
+
+## Initial installation of this UI
+
+The currently installed Preview `.exe` predates this feature. Building or
+installing **one new Preview installer from `main`** is required to get
+the new UI and native update commands. The GitHub workflow
+`OpenJarvis Main Windows Preview` builds an unsigned test installer as an
+Actions artifact. The user must install it explicitly. Subsequent
+**backend Python** changes will be available by one click.
+
+The old local development checkout `C:\Users\harut\OpenJarvis`
+is separate from the installed Preview's
+`%LOCALAPPDATA%\OpenJarvis Armenian Preview\src` checkout.
+Clicking Update updates **the latter** only.
+
+For local contributors, one-time manual migration of the development clone
+can use `git fetch origin main` then `git switch main` and
+`git pull --ff-only origin main` after verifying the worktree is clean.
+
+## Deployment checklist
+
+1. Update and rebuild Preview from `main` with the
+   `armenian-preview` feature; run Rust, frontend and Python tests.
+2. Install the new Preview; check GitHub main in Settings.
+3. Push a harmless test commit to `main`. Confirm an update banner appears
+   on the installed Preview within 10 minutes.
+4. Click Update and confirm the installed `src` checkout is now on
+   `main` at the new SHA, and the owned backend restarts.
+5. Validate dirty worktree refusal, offline failure, same-SHA no-op, and
+   no updates to unrelated checkouts.
+6. Separately provision signing before claiming that Desktop `.exe`
+   updates are automatic. Never reuse the upstream release signing identity.
