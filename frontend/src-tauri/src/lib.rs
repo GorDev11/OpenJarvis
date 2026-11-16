@@ -3708,7 +3708,7 @@ mod tests {
     }
 
     #[test]
-    fn git_clone_args_can_pin_the_preview_branch() {
+    fn git_clone_args_can_pin_the_main_branch() {
         let target = Path::new("C:/OpenJarvis Preview/src");
         assert_eq!(
             git_clone_args(
