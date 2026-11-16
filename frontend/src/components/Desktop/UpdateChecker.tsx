@@ -88,6 +88,24 @@ export function UpdateChecker() {
         }
       });
 
+      // The signed desktop binary and Python backend source are two separate
+      // installations. A single explicit Update click should advance both.
+      // Keep the binary update successful even if the source checkout has
+      // local edits or the network changed during the Git operation.
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const source = await invoke<{
+          latest_sha: string; update_available: boolean; can_update: boolean;
+        }>('check_main_update');
+        if (source.update_available && source.can_update) {
+          await invoke('apply_main_update', { expectedSha: source.latest_sha });
+        } else if (source.update_available) {
+          setErrorMsg('Desktop updated; backend source has local changes and needs review.');
+        }
+      } catch (syncError) {
+        setErrorMsg('Desktop updated; backend source sync did not finish: ' + String(syncError));
+      }
+
       setState('ready');
     } catch (e: any) {
       setErrorMsg(e?.message || 'Download failed');
@@ -140,6 +158,7 @@ export function UpdateChecker() {
       {state === 'ready' && (
         <div style={styles.row}>
           <span style={{ color: '#a6e3a1' }}>Update installed.</span>
+          {errorMsg && <span style={{ color: '#f9e2af', fontSize: 12 }}>{errorMsg}</span>}
           <div style={styles.actions}>
             <button style={styles.successBtn} onClick={handleRelaunch}>Relaunch now</button>
             <button style={styles.secondaryBtn} onClick={() => setDismissed(true)}>Later</button>
