@@ -22,7 +22,7 @@ def test_installed_preview_clones_main_not_feature_branch() -> None:
 def test_git_main_update_is_fast_forward_and_does_not_reset() -> None:
     source = (DESKTOP / "main_updates.rs").read_text(encoding="utf-8")
     assert 'const PRIMARY_BRANCH: &str = "main";' in source
-    assert 'https://github.com/GorDev11/OpenJarvis.git' in source
+    assert "https://github.com/GorDev11/OpenJarvis.git" in source
     assert '"merge-base", "--is-ancestor"' in source
     assert '"merge", "--ff-only"' in source
     assert '"status", "--porcelain"' in source
@@ -42,12 +42,8 @@ def test_chat_surfaces_main_update_notification() -> None:
 
 
 def test_unsigned_preview_never_installs_unsigned_desktop_update() -> None:
-    assert "VITE_OPENJARVIS_NO_UPDATER=1" in PREVIEW_MODE.read_text(
-        encoding="utf-8"
-    )
-    assert "VITE_OPENJARVIS_NO_UPDATER=0" in RELEASE_MODE.read_text(
-        encoding="utf-8"
-    )
+    assert "VITE_OPENJARVIS_NO_UPDATER=1" in PREVIEW_MODE.read_text(encoding="utf-8")
+    assert "VITE_OPENJARVIS_NO_UPDATER=0" in RELEASE_MODE.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "TAURI_SIGNING_PRIVATE_KEY" in workflow
     assert "TAURI_SIGNING_PUBLIC_KEY" in workflow
