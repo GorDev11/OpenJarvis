@@ -48,13 +48,27 @@ The old unsigned Preview uses `.env.armenian-preview` and stays isolated.
 without a signed migration plan or manual reinstall. Protect the owner
 repository against unreviewed commits because CI can sign code from `main`.
 
-## Why the two update buttons may coexist
+## One unified update button
 
-The Git main source updater targets the Python server. The signed release
-updater targets the compiled Tauri/React executable. Git changes in Python
-will be available without reinstalling the app, while frontend/native
-changes need the new signed release. Both source and binary update flows
-require the user's explicit click.
+The main Git update card is the sole user-facing update action. The unsigned
+Preview can fast-forward the Python backend only. Once a signed Desktop
+release has been provisioned, the same card checks the owner-controlled
+signed channel and prefers a verified signed Desktop installer whenever
+one is available. Clicking it downloads the signed release, safely
+fast-forwards the owned Python source (refusing dirty checkouts), then
+hands off to Tauri for installation. Windows exits during installation;
+if Windows does not relaunch the app, start it normally from the Start menu.
+
+A Git commit is detected before CI has finished producing the signed
+installer. During that interval the existing source-only update remains
+available. Once CI publishes a new signed release, the unified card
+discovers it at the next signed check. No unsigned artifact is ever executed.
+
+**One-time bootstrap is unavoidable:** install the first signed release
+manually after configuring the signing keys. Thereafter subsequent signed
+releases use the in-app Update action. Pushes changing frontend or Python
+application code trigger the signed workflow; documentation-only commits
+only trigger the source checker. All installations remain opt-in.
 
 **Validation**: Confirm the Windows installer was built from `main`, the
 installed `src` checkout is on `main`, the release manifest has

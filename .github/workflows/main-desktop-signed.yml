@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'frontend/**'
+      - 'src/openjarvis/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
       - 'scripts/build-armenian-desktop.ps1'
       - '.github/workflows/main-desktop-signed.yml'
   workflow_dispatch:

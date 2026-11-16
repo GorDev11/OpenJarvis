@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, RefreshCw, CheckCircle2, AlertTriangle, LoaderCircle, X } from 'lucide-react';
 import { isTauri } from '../../lib/api';
+import { isAutoUpdateDisabled, isUpdaterBuildDisabled } from './UpdateChecker';
+import { useAppStore } from '../../lib/store';
 
 // Direct GitHub WebSockets are unavailable to installed clients; use fast, bounded polling.
 const CHECK_EVERY_MS = 15 * 1000;
+const CHECK_SIGNED_EVERY_MS = 60 * 1000;
 const DISMISSED_KEY = 'oj-main-update-dismissed-sha';
 
 export type MainSourceStatus = {
@@ -15,10 +18,10 @@ export type MainSourceStatus = {
   message: string;
 };
 
-type Phase = 'idle' | 'checking' | 'available' | 'updating' | 'restarting' | 'updated' | 'error';
+type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'updating' | 'restarting' | 'updated' | 'error';
 
-/** Check and apply the user's GorDev11/OpenJarvis main Python backend update.
- * This does not silently install unsigned desktop executables.
+/** A single update surface for GitHub main source and Tauri-signed releases.
+ * Never accepts arbitrary executable downloads or unverified updates.
  */
 export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   const [phase, setPhase] = useState<Phase>('idle');
@@ -28,6 +31,12 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   const updating = useRef(false);
   const checking = useRef(false);
   const [lastCheckedAt, setLastCheckedAt] = useState('');
+  const [desktopVersion, setDesktopVersion] = useState('');
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const signedUpdate = useRef<any>(null);
+  const checkingSigned = useRef(false);
+  const installingDesktop = useRef(false);
+  const isStreaming = useAppStore(s => s.streamState.isStreaming);
 
   const check = useCallback(async () => {
     if (!isTauri() || updating.current || checking.current) return;
@@ -40,13 +49,13 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
       setLastCheckedAt(new Date().toLocaleTimeString());
       setStatus(result);
       setError('');
-      setPhase(result.update_available ? 'available' : 'idle');
+      setPhase(result.update_available || signedUpdate.current ? 'available' : 'idle');
       if (result.update_available) {
         const suppressed = (() => {
           try { return localStorage.getItem(DISMISSED_KEY) === result.latest_sha; } catch { return false; }
         })();
-        setDismissed(suppressed);
-      } else {
+        if (!signedUpdate.current) setDismissed(suppressed);
+      } else if (!signedUpdate.current) {
         setDismissed(false);
       }
     } catch (e) {
@@ -81,15 +90,54 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
     };
   }, [check]);
 
+  // The preview has no signing key and cannot install an executable.
+  // The signed channel is checked independently from the main Git ref;
+  // CI may still be building when a new source commit is first detected.
+  const checkDesktop = useCallback(async () => {
+    if (!isTauri() || isUpdaterBuildDisabled() || isAutoUpdateDisabled() ||
+        updating.current || checkingSigned.current) return;
+    checkingSigned.current = true;
+    try {
+      const { check } = await import('@tauri-apps/plugin-updater');
+      const release = await check({ timeout: 30000 });
+      if (!release) return;
+      signedUpdate.current = release;
+      setDesktopVersion(release.version);
+      setPhase(prev => prev === 'updating' || prev === 'restarting' ? prev : 'available');
+      let suppressed = false;
+      try { suppressed = localStorage.getItem(DISMISSED_KEY) === `desktop:${release.version}`; } catch { /* private mode */ }
+      setDismissed(suppressed);
+    } catch {
+      // No published release yet, or temporarily offline. Never download an
+      // unsigned Actions artifact or fall back to an upstream release feed.
+    } finally {
+      checkingSigned.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri() || isUpdaterBuildDisabled()) return;
+    void checkDesktop();
+    const timer = window.setInterval(() => { void checkDesktop(); }, CHECK_SIGNED_EVERY_MS);
+    const onFocus = () => { void checkDesktop(); };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onFocus);
+    };
+  }, [checkDesktop]);
+
   useEffect(() => {
     if (!isTauri()) return;
     const onReady = () => {
-      if (!updating.current) return;
+      if (!updating.current || installingDesktop.current) return;
       updating.current = false;
       setPhase(prev => prev === 'updating' || prev === 'restarting' ? 'updated' : prev);
     };
     const onTimeout = () => {
-      if (!updating.current) return;
+      if (!updating.current || installingDesktop.current) return;
       updating.current = false;
       setError('Backend-ի վերագործարկումը երկար է տևում։ Ստուգիր կապը կամ Logs-ը։');
       setPhase('error');
@@ -109,33 +157,84 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   }, [phase]);
 
   const update = useCallback(async () => {
-    if (!status?.can_update || updating.current) return;
+    if (updating.current || isStreaming) return;
+    const release = signedUpdate.current;
+    if (!release && !status?.can_update) return;
     updating.current = true;
+    installingDesktop.current = !!release;
     setDismissed(false);
-    setPhase('updating');
     setError('');
+
+    if (release) {
+      // Download and verify the release before changing local source.
+      setPhase('downloading');
+      setDownloadProgress(0);
+      let downloaded = 0;
+      let total = 0;
+      try {
+        await release.download((event: any) => {
+          if (event.event === 'Started') total = event.data?.contentLength || 0;
+          if (event.event === 'Progress') {
+            downloaded += event.data?.chunkLength || 0;
+            if (total > 0) setDownloadProgress(Math.min(100, Math.round(100 * downloaded / total)));
+          }
+          if (event.event === 'Finished') setDownloadProgress(100);
+        });
+
+        // Fast-forward the owned Python checkout before Windows quits in
+        // update.install(). Reject dirty/diverged checkouts: never reset.
+        const { invoke } = await import('@tauri-apps/api/core');
+        const source = await invoke<MainSourceStatus>('check_main_update');
+        if (source.update_available) {
+          if (!source.can_update) {
+            throw new Error('Backend-ը փոփոխված է տեղում։ Պահպանիր փոփոխությունները՝ մինչև Desktop թարմացնելը։');
+          }
+          window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'updating' }));
+          await invoke('apply_main_update', { expectedSha: source.latest_sha });
+          window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'waiting' }));
+        }
+        setPhase('installing');
+        await release.install();
+        // Windows exits during the installer; on other platforms report completion.
+        setPhase('updated');
+      } catch (e) {
+        setError(String(e));
+        setPhase('error');
+      } finally {
+        updating.current = false;
+        installingDesktop.current = false;
+      }
+      return;
+    }
+
+    // No signed Desktop binary is currently published: update Python only.
+    setPhase('updating');
     window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'updating' }));
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      await invoke<string>('apply_main_update', { expectedSha: status.latest_sha });
+      await invoke<string>('apply_main_update', { expectedSha: status!.latest_sha });
       try { localStorage.removeItem(DISMISSED_KEY); } catch { /* private mode */ }
-      setStatus(prev => prev ? { ...prev, current_sha: prev.latest_sha, branch: 'main', update_available: false } : prev);
+      setStatus(prev => prev ? {
+        ...prev, current_sha: prev.latest_sha, branch: 'main', update_available: false,
+      } : prev);
       setPhase('restarting');
+      window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'waiting' }));
     } catch (e) {
+      updating.current = false;
       setError(String(e));
       setPhase('error');
-    } finally {
-      // Native apply can return before the managed Python backend is healthy.
+      // The launcher retries its owned backend even when Git refuses an update.
       window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'waiting' }));
     }
-  }, [status]);
+  }, [status, isStreaming]);
 
   if (!isTauri()) return null;
 
   const dismiss = () => {
     setDismissed(true);
-    if (status?.latest_sha) {
-      try { localStorage.setItem(DISMISSED_KEY, status.latest_sha); } catch { /* private mode */ }
+    const key = desktopVersion ? `desktop:${desktopVersion}` : status?.latest_sha;
+    if (key) {
+      try { localStorage.setItem(DISMISSED_KEY, key); } catch { /* private mode */ }
     }
   };
 
@@ -149,15 +248,15 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
           <RefreshCw size={12} className={phase === 'checking' ? 'animate-spin' : ''} />
           Ավտոմատ ստուգում՝ յուրաքանչյուր 15 վայրկյանը մեկ
         </span>
-        {status?.update_available && (
-          <button type="button" onClick={() => void update()} disabled={!status.can_update || updating.current}
+        {(status?.update_available || desktopVersion) && (
+          <button type="button" onClick={() => void update()} disabled={(!desktopVersion && !status?.can_update) || updating.current || isStreaming}
             className="rounded-lg border px-3 py-1.5 flex items-center gap-1.5"
             style={{ borderColor: 'var(--color-accent)', color: 'var(--color-text)' }}>
             <Download size={12} /> {phase === 'updating' || phase === 'restarting' ? 'Թարմացվում է...' : 'Թարմացնել / Update'}
           </button>
         )}
         <span style={{ color: 'var(--color-text-tertiary)' }}>
-          {status?.branch === 'main' ? 'main' : status?.branch || 'GitHub'} · {status?.current_sha?.slice(0, 7)}
+          {desktopVersion ? `Desktop v${desktopVersion}` : (status?.branch === 'main' ? 'main' : status?.branch || 'GitHub')} · {status?.current_sha?.slice(0, 7)}
           {status?.update_available ? ` → ${status.latest_sha.slice(0, 7)}` : ''}
         </span>
         {lastCheckedAt && <span style={{ color: 'var(--color-text-tertiary)' }}>Ստուգվել է՝ {lastCheckedAt}</span>}
@@ -168,7 +267,7 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
     );
   }
 
-  if (dismissed || (phase !== 'available' && phase !== 'updating' && phase !== 'restarting' && phase !== 'updated' && phase !== 'error')) {
+  if (dismissed || (phase !== 'available' && phase !== 'downloading' && phase !== 'installing' && phase !== 'updating' && phase !== 'restarting' && phase !== 'updated' && phase !== 'error')) {
     return null;
   }
 
@@ -189,7 +288,7 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
           style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
         >
           {phase === 'updated' ? <CheckCircle2 size={18} /> :
-            phase === 'updating' || phase === 'restarting'
+            phase === 'downloading' || phase === 'installing' || phase === 'updating' || phase === 'restarting'
               ? <LoaderCircle size={18} className="animate-spin" />
               : phase === 'error' ? <AlertTriangle size={18} /> : <Download size={18} />}
         </span>
@@ -198,21 +297,27 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
             <div className="min-w-0">
               <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
                 {phase === 'updated' ? 'Թարմացումը հաջող ավարտվեց'
-                  : phase === 'restarting' ? 'Backend-ը վերագործարկվում է'
+                  : phase === 'downloading' ? 'Ներբեռնվում է ստորագրված Desktop թարմացումը'
+                    : phase === 'installing' ? 'Տեղադրվում է OpenJarvis Desktop-ը'
+                    : phase === 'restarting' ? 'Backend-ը վերագործարկվում է'
                     : phase === 'updating' ? 'Թարմացվում է OpenJarvis-ը'
                       : phase === 'error' ? 'Թարմացման ընթացքում խնդիր առաջացավ'
                         : 'Նոր թարմացում կա'}
               </div>
               <div className="mt-0.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                {phase === 'updating' ? 'GitHub main-ից ներբեռնվում է նոր կոդը...'
+                {phase === 'downloading' ? `Ներբեռնում՝ ${downloadProgress}% · ստորագրությունը ստուգվում է`
+                  : phase === 'installing' ? 'Windows-ը կտեղադրի նոր .exe-ն։ Ծրագիրը կարող է փակվել։'
+                  : phase === 'updating' ? 'GitHub main-ից ներբեռնվում է նոր կոդը...'
                   : phase === 'restarting' ? 'Սպասում ենք Backend-ի կապի վերականգնմանը...'
                     : phase === 'updated' ? 'Backend-ը կրկին հասանելի է։'
-                      : status
+                      : desktopVersion
+                        ? <>GitHub main · ստորագրված Desktop v{desktopVersion}</>
+                        : status
                         ? <>GitHub main · {status.current_sha.slice(0, 7)} → {status.latest_sha.slice(0, 7)}</>
                         : 'GitHub main'}
               </div>
             </div>
-            {phase !== 'updating' && phase !== 'restarting' && (
+            {phase !== 'downloading' && phase !== 'installing' && phase !== 'updating' && phase !== 'restarting' && (
               <button type="button" onClick={dismiss} aria-label="Փակել թարմացման ծանուցումը"
                 className="shrink-0 rounded-lg p-1.5 transition-opacity hover:opacity-60"
                 style={{ color: 'var(--color-text-tertiary)' }}>
@@ -225,18 +330,19 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
               {error}
             </p>
           )}
-          {(phase === 'available' || phase === 'error') && status?.update_available && (
+          {(phase === 'available' || phase === 'error') && (status?.update_available || desktopVersion) && (
             <div className="mt-2 flex items-center gap-2">
-              <button type="button" onClick={() => void update()} disabled={!status.can_update}
+              <button type="button" onClick={() => void update()} disabled={(!desktopVersion && !status?.can_update) || isStreaming}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                 style={{ background: 'var(--color-accent)', color: 'white' }}>
                 <Download size={13} /> Թարմացնել / Update
               </button>
-              {!status.can_update && (
+              {!desktopVersion && status && !status.can_update && (
                 <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                   {status.message}
                 </span>
               )}
+              {isStreaming && <span className="text-xs">Սպասիր՝ պատասխանը ավարտվի</span>}
             </div>
           )}
         </div>
