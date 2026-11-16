@@ -106,7 +106,7 @@ def test_main_update_alert_is_visible_in_layout_without_manual_checks() -> None:
     assert "<MainSourceUpdate />" not in app
     assert '<div className="relative z-30 shrink-0">' in layout
     assert "<MainSourceUpdate />" in layout
-    assert "role=\"alert\" aria-live=\"assertive\"" in widget
+    assert 'role="alert" aria-live="assertive"' in widget
     assert "Նոր թարմացում կա" in widget
     assert "Ավտոմատ ստուգում" in widget
     assert "onClick={() => void check()}" not in widget
