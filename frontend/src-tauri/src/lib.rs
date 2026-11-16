@@ -1,3 +1,5 @@
+mod main_updates;
+
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -20,7 +22,7 @@ const DESKTOP_SOURCE_REPOSITORY: &str = "https://github.com/GorDev11/OpenJarvis.
 #[cfg(not(feature = "armenian-preview"))]
 const DESKTOP_SOURCE_REPOSITORY: &str = "https://github.com/open-jarvis/OpenJarvis.git";
 #[cfg(feature = "armenian-preview")]
-const DESKTOP_SOURCE_BRANCH: Option<&str> = Some("feature/armenian-voice");
+const DESKTOP_SOURCE_BRANCH: Option<&str> = Some("main");
 #[cfg(not(feature = "armenian-preview"))]
 const DESKTOP_SOURCE_BRANCH: Option<&str> = None;
 const INSTALL_SCOPED_BACKEND: bool = cfg!(feature = "armenian-preview");
@@ -558,6 +560,8 @@ impl BackendManager {
 }
 
 type SharedBackend = Arc<Mutex<BackendManager>>;
+// Only one Git source update may be applied at a time.
+type SharedSourceUpdateGate = Arc<Mutex<()>>;
 
 /// Spawn exactly one tracked boot task. Keeping its handle lets recovery
 /// abort an in-flight endpoint check/model download before killing children.
@@ -3425,6 +3429,7 @@ async fn hide_overlay() -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let backend: SharedBackend = Arc::new(Mutex::new(BackendManager::default()));
+    let source_update_gate: SharedSourceUpdateGate = Arc::new(Mutex::new(()));
     let configured_at_launch = match read_configured_inference_config() {
         Some(cfg) if cfg.confirmed => {
             // A confirmed source never consumes a staging slot. Clear any
@@ -3456,6 +3461,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(backend.clone())
+        .manage(source_update_gate)
         .manage(status.clone())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
@@ -3548,6 +3554,8 @@ pub fn run() {
             get_api_base,
             start_backend,
             stop_backend,
+            main_updates::check_main_update,
+            main_updates::apply_main_update,
             reset_inference_source,
             check_health,
             fetch_energy,
@@ -3705,7 +3713,7 @@ mod tests {
         assert_eq!(
             git_clone_args(
                 "https://github.com/GorDev11/OpenJarvis.git",
-                Some("feature/armenian-voice"),
+                Some("main"),
                 target,
             ),
             vec![
@@ -3713,7 +3721,7 @@ mod tests {
                 "--depth",
                 "1",
                 "--branch",
-                "feature/armenian-voice",
+                "main",
                 "--single-branch",
                 "https://github.com/GorDev11/OpenJarvis.git",
                 "C:/OpenJarvis Preview/src",
@@ -3725,7 +3733,7 @@ mod tests {
                 Some("feature/armenian-voice"),
                 target,
             ),
-            "git clone --depth 1 --branch feature/armenian-voice --single-branch \
+            "git clone --depth 1 --branch main --single-branch \
              https://github.com/GorDev11/OpenJarvis.git \"C:/OpenJarvis Preview/src\""
         );
     }
@@ -3738,7 +3746,7 @@ mod tests {
                 DESKTOP_SOURCE_REPOSITORY,
                 "https://github.com/GorDev11/OpenJarvis.git"
             );
-            assert_eq!(DESKTOP_SOURCE_BRANCH, Some("feature/armenian-voice"));
+            assert_eq!(DESKTOP_SOURCE_BRANCH, Some("main"));
         } else {
             assert!(!INSTALL_SCOPED_BACKEND);
             assert_eq!(
