@@ -463,7 +463,38 @@ struct ChildHandle {
 
 impl ChildHandle {
     async fn kill(&mut self) {
-        let _ = self.child.kill().await;
+        #[cfg(target_os = "windows")]
+        {
+            // `uv run jarvis serve` is a launcher process. Killing only `uv`
+            // can leave its Python descendant alive long enough for the next
+            // desktop start to see a stale daemon PID. Terminate the complete
+            // tree we own, without opening a console window, and reap the
+            // tracked launcher before returning.
+            let mut killed_tree = false;
+            if let Some(pid) = self.child.id() {
+                use std::os::windows::process::CommandExt as _;
+
+                let mut taskkill = tokio::process::Command::new("taskkill");
+                taskkill
+                    .args(["/F", "/T", "/PID", &pid.to_string()])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
+                taskkill.as_std_mut().creation_flags(0x0800_0000);
+                killed_tree = taskkill
+                    .status()
+                    .await
+                    .map(|status| status.success())
+                    .unwrap_or(false);
+            }
+            if !killed_tree {
+                let _ = self.child.kill().await;
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = self.child.kill().await;
+        }
+        let _ = self.child.wait().await;
     }
 }
 
@@ -3549,7 +3580,10 @@ pub fn run() {
         .run(move |_app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let b = backend.clone();
-                tauri::async_runtime::spawn(async move {
+                // Returning from this callback lets the runtime and all
+                // pending cleanup tasks disappear. Block the final exit until
+                // every owned backend process has actually been reaped.
+                tauri::async_runtime::block_on(async move {
                     b.lock().await.stop_all().await;
                 });
             }
@@ -3573,9 +3607,9 @@ mod tests {
         project_root_near_executable, reload_cloud_keys_for_owned_backend_at,
         should_persist_resolved_model, spawn_owned_child, stage_pending_inference_config_at,
         startup_installed_model, upsert_engine_host, uv_sync_stderr_tail, BackendManager,
-        InferenceConfig, InferenceCredentialStore, PendingInferenceRollback, SetupStatus,
-        SourceKind, DESKTOP_SOURCE_BRANCH, DESKTOP_SOURCE_REPOSITORY, DESKTOP_UV_SYNC_COMMAND,
-        INSTALL_SCOPED_BACKEND, PENDING_INFERENCE_API_KEY,
+        ChildHandle, InferenceConfig, InferenceCredentialStore, PendingInferenceRollback,
+        SetupStatus, SourceKind, DESKTOP_SOURCE_BRANCH, DESKTOP_SOURCE_REPOSITORY,
+        DESKTOP_UV_SYNC_COMMAND, INSTALL_SCOPED_BACKEND, PENDING_INFERENCE_API_KEY,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -4428,6 +4462,86 @@ mod tests {
         std::fs::write(started, "started").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(500));
         std::fs::write(completed, "completed").unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn owned_process_tree_grandchild_helper() {
+        let Some(started) = std::env::var_os("OPENJARVIS_TREE_STARTED") else {
+            return;
+        };
+        let completed = std::env::var_os("OPENJARVIS_TREE_COMPLETED").unwrap();
+        std::fs::write(started, "started").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        std::fs::write(completed, "completed").unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn owned_process_tree_parent_helper() {
+        let Some(started) = std::env::var_os("OPENJARVIS_TREE_STARTED") else {
+            return;
+        };
+        let completed = std::env::var_os("OPENJARVIS_TREE_COMPLETED").unwrap();
+        let _grandchild = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "tests::owned_process_tree_grandchild_helper",
+                "--nocapture",
+            ])
+            .env("OPENJARVIS_TREE_STARTED", started)
+            .env("OPENJARVIS_TREE_COMPLETED", completed)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(30));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn stopping_backend_kills_the_owned_windows_process_tree() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "openjarvis-owned-tree-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let started = root.join("started");
+        let completed = root.join("completed");
+
+        let mut cmd = tokio::process::Command::new(std::env::current_exe().unwrap());
+        cmd.args([
+            "--exact",
+            "tests::owned_process_tree_parent_helper",
+            "--nocapture",
+        ])
+        .env("OPENJARVIS_TREE_STARTED", &started)
+        .env("OPENJARVIS_TREE_COMPLETED", &completed)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+        let child = spawn_owned_child(&mut cmd).unwrap();
+        let mut handle = ChildHandle { child };
+
+        for _ in 0..100 {
+            if started.exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(started.exists(), "grandchild process did not start");
+
+        handle.kill().await;
+        tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+
+        assert!(
+            !completed.exists(),
+            "stopping the backend left its Python-like descendant running"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
