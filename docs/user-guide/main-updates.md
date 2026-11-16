@@ -99,3 +99,19 @@ Expected: a running Preview built before this commit detects the new GitHub
 `main` SHA automatically, shows an update banner and **Թարմացնել / Update**
 button, and waits for the user to choose whether to apply it. The source
 update should remain fast-forward-only, with no destructive reset.
+
+## Automatic update notification smoke test — compact card and backend recovery
+
+This documentation-only commit is the test trigger for the installed
+OpenJarvis Armenian Preview built from commit `b0b21c3`.
+
+Expected observations:
+- Without a manual check, the app detects the new main commit within
+  approximately 15 seconds while connected to GitHub.
+- The compact, non-blocking update card appears with an Update action.
+- After the user chooses Update, the managed backend restarts; a temporary
+  unavailable health check is displayed as a restart state rather than
+  an unrelated connection error.
+- Once the backend is healthy again, the success state clears itself.
+
+This test does not alter application source, settings, models or secrets.
