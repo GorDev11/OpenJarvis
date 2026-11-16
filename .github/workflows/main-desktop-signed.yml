@@ -19,14 +19,14 @@ concurrency:
 jobs:
   signed-windows-x64:
     # Only release signed owner-controlled binaries.
-    if: \${{ vars.TAURI_SIGNING_PUBLIC_KEY != '' }}
+    if: ${{ vars.TAURI_SIGNING_PUBLIC_KEY != '' }}
     runs-on: windows-latest
     timeout-minutes: 100
     env:
-      TAURI_SIGNING_PRIVATE_KEY: \${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: \${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      TAURI_PUBLIC_KEY: \${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
-      GH_TOKEN: \${{ github.token }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      TAURI_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+      GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: desktop-main
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +59,7 @@ jobs:
       - name: Configure Tauri signed main channel
         shell: pwsh
         env:
-          BUILD_VERSION: 1.1.\${{ github.run_number }}
+          BUILD_VERSION: 1.1.${{ github.run_number }}
         run: |
           $config = Get-Content "frontend/src-tauri/tauri.armenian-preview.conf.json" -Raw | ConvertFrom-Json -AsHashtable
           $config["version"] = $env:BUILD_VERSION
@@ -74,7 +74,7 @@ jobs:
       - name: Generate latest.json
         shell: pwsh
         env:
-          BUILD_VERSION: 1.1.\${{ github.run_number }}
+          BUILD_VERSION: 1.1.${{ github.run_number }}
         run: |
           $dir = "frontend/src-tauri/target/release/bundle/nsis"
           $zip = Get-ChildItem $dir -Filter '*.nsis.zip' -File | Select-Object -First 1
@@ -107,12 +107,12 @@ jobs:
           fi
           shopt -s nullglob
           archives=("$dir"/*.nsis.zip)
-          if [ "\${#archives[@]}" -ne 1 ]; then echo "::error::Missing updater archive"; exit 1; fi
-          archive="\${archives[0]}"
+          if [ "${#archives[@]}" -ne 1 ]; then echo "::error::Missing updater archive"; exit 1; fi
+          archive="${archives[0]}"
           gh release upload "$RELEASE_TAG" "$archive" "$archive.sig" --repo "$GITHUB_REPOSITORY" --clobber
           installers=("$dir"/*.exe)
-          if [ "\${#installers[@]}" -gt 0 ]; then
-            gh release upload "$RELEASE_TAG" "\${installers[0]}" --repo "$GITHUB_REPOSITORY" --clobber
+          if [ "${#installers[@]}" -gt 0 ]; then
+            gh release upload "$RELEASE_TAG" "${installers[0]}" --repo "$GITHUB_REPOSITORY" --clobber
           fi
           # Latest manifest is uploaded last to avoid broken asset references.
           gh release upload "$RELEASE_TAG" "$dir/latest.json" --repo "$GITHUB_REPOSITORY" --clobber
