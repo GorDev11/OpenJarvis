@@ -10,15 +10,65 @@ import { MainSourceUpdate } from './Desktop/MainSourceUpdate';
 export function Layout() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const [apiReachable, setApiReachable] = useState<boolean | null>(null);
+  const [backendRestarting, setBackendRestarting] = useState(false);
 
   useEffect(() => {
-    const check = () => checkHealth().then(setApiReachable);
-    check();
-    const interval = setInterval(check, 30000);
-    const onFocus = () => check();
+    let mounted = true;
+    let checking = false;
+    let stage: 'idle' | 'updating' | 'waiting' = 'idle';
+    let graceDeadline = 0;
+    let waitingSince = 0;
+
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const reachable = await checkHealth();
+        if (!mounted) return;
+        setApiReachable(reachable);
+        if (stage === 'waiting' && reachable && Date.now() - waitingSince >= 1500) {
+          stage = 'idle';
+          setBackendRestarting(false);
+          window.dispatchEvent(new Event('openjarvis-backend-ready'));
+        } else if (stage !== 'idle' && Date.now() >= graceDeadline) {
+          stage = 'idle';
+          setBackendRestarting(false);
+          window.dispatchEvent(new Event('openjarvis-backend-timeout'));
+        }
+      } finally {
+        checking = false;
+      }
+    };
+
+    const onBackendUpdate = (event: Event) => {
+      const next = (event as CustomEvent<string>).detail;
+      if (next !== 'updating' && next !== 'waiting') return;
+      stage = next;
+      graceDeadline = Date.now() + 5 * 60 * 1000;
+      setBackendRestarting(true);
+      if (next === 'updating') {
+        setApiReachable(null);
+      } else {
+        waitingSince = Date.now();
+        void check();
+      }
+    };
+
+    void check();
+    const normalTimer = window.setInterval(() => {
+      if (stage === 'idle') void check();
+    }, 30000);
+    const recoveryTimer = window.setInterval(() => {
+      if (stage !== 'idle') void check();
+    }, 2500);
+    const onFocus = () => { void check(); };
+    window.addEventListener('openjarvis-backend-update', onBackendUpdate);
     window.addEventListener('focus', onFocus);
     return () => {
-      clearInterval(interval);
+      mounted = false;
+      window.clearInterval(normalTimer);
+      window.clearInterval(recoveryTimer);
+      window.removeEventListener('openjarvis-backend-update', onBackendUpdate);
       window.removeEventListener('focus', onFocus);
     };
   }, []);
@@ -32,7 +82,7 @@ export function Layout() {
       <ApprovalBell />
 
       {/* Health check banner */}
-      {apiReachable === false && (
+      {apiReachable === false && !backendRestarting && (
         <div
           className="flex items-center gap-3 px-4 py-2 text-sm shrink-0"
           style={{
