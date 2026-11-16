@@ -1,8 +1,8 @@
-name: Armenian Voice Windows Preview
+name: OpenJarvis Main Windows Preview
 
 on:
   push:
-    branches: [feature/armenian-voice]
+    branches: [main]
   pull_request:
     branches: [main]
     paths:
