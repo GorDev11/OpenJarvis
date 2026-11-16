@@ -77,13 +77,14 @@ jobs:
           BUILD_VERSION: 1.1.${{ github.run_number }}
         run: |
           $dir = "frontend/src-tauri/target/release/bundle/nsis"
-          $zip = Get-ChildItem $dir -Filter '*.nsis.zip' -File | Select-Object -First 1
-          if (-not $zip) { throw "Missing NSIS updater zip" }
-          $signatureFile = "$($zip.FullName).sig"
-          if (-not (Test-Path $signatureFile)) { throw "Missing signature" }
+          # Tauri v2 createUpdaterArtifacts=true signs the NSIS .exe itself.
+          $installer = Get-ChildItem $dir -Filter '*.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw "Missing NSIS installer" }
+          $signatureFile = "$($installer.FullName).sig"
+          if (-not (Test-Path $signatureFile)) { throw "Missing installer signature" }
           $signature = (Get-Content $signatureFile -Raw).Trim()
           if (-not $signature) { throw "Empty signature" }
-          $asset = [Uri]::EscapeDataString($zip.Name)
+          $asset = [Uri]::EscapeDataString($installer.Name)
           $url = "https://github.com/GorDev11/OpenJarvis/releases/download/$env:RELEASE_TAG/$asset"
           $manifest = @{
             version = $env:BUILD_VERSION
@@ -106,13 +107,10 @@ jobs:
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "OpenJarvis Main Desktop" --notes "Signed, opt-in desktop updates from main." --prerelease
           fi
           shopt -s nullglob
-          archives=("$dir"/*.nsis.zip)
-          if [ "${#archives[@]}" -ne 1 ]; then echo "::error::Missing updater archive"; exit 1; fi
-          archive="${archives[0]}"
-          gh release upload "$RELEASE_TAG" "$archive" "$archive.sig" --repo "$GITHUB_REPOSITORY" --clobber
           installers=("$dir"/*.exe)
-          if [ "${#installers[@]}" -gt 0 ]; then
-            gh release upload "$RELEASE_TAG" "${installers[0]}" --repo "$GITHUB_REPOSITORY" --clobber
-          fi
+          if [ "${#installers[@]}" -ne 1 ]; then echo "::error::Missing signed installer"; exit 1; fi
+          installer="${installers[0]}"
+          if [ ! -f "$installer.sig" ]; then echo "::error::Missing updater signature"; exit 1; fi
+          gh release upload "$RELEASE_TAG" "$installer" "$installer.sig" --repo "$GITHUB_REPOSITORY" --clobber
           # Latest manifest is uploaded last to avoid broken asset references.
           gh release upload "$RELEASE_TAG" "$dir/latest.json" --repo "$GITHUB_REPOSITORY" --clobber
