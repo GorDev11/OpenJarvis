@@ -89,3 +89,13 @@ No application code, model configuration, API keys, or Windows settings
 were changed. Once this commit is detected, selecting **Թարմացնել / Update**
 should fast-forward the installation-scoped source checkout and restart
 the managed Python backend if its working tree is clean.
+
+## Automatic update notification smoke test — second pass
+
+This documentation-only change exercises the Armenian Preview notification
+without altering the Python backend, Rust launcher, frontend, settings, or models.
+
+Expected: a running Preview built before this commit detects the new GitHub
+`main` SHA automatically, shows an update banner and **Թարմացնել / Update**
+button, and waits for the user to choose whether to apply it. The source
+update should remain fast-forward-only, with no destructive reset.
