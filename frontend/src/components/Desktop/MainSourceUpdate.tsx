@@ -131,7 +131,7 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
           {status?.branch === 'main' ? 'main' : status?.branch || 'GitHub'} · {status?.current_sha?.slice(0, 7)}
           {status?.update_available ? ` → ${status.latest_sha.slice(0, 7)}` : ''}
         </span>
-        {lastCheckedAt && <span style={{ color: 'var(--color-text-tertiary)' }}>Ստուգվել է՝ {lastCheckedAt}</span>
+        {lastCheckedAt && <span style={{ color: 'var(--color-text-tertiary)' }}>Ստուգվել է՝ {lastCheckedAt}</span>}
         {status && <span style={{ color: 'var(--color-text-secondary)' }}>{status.message}</span>}
         {error && <span role="alert" style={{ color: 'var(--color-error)' }}>{error}</span>}
       </div>
