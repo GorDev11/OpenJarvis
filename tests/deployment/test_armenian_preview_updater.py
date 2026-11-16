@@ -32,7 +32,7 @@ def test_preview_replaces_stable_updater_endpoints_and_disables_frontend_poll() 
     assert "updaterBuildDisabled" in SETTINGS_PAGE.read_text(encoding="utf-8")
 
 
-def test_local_preview_build_accepts_descendant_worktrees() -> None:
+def test_local_preview_build_requires_main_branch() -> None:
     script = BUILD_SCRIPT.read_text(encoding="utf-8")
-    assert "merge-base --is-ancestor" in script
-    assert '$branch -ne "feature/armenian-voice"' not in script
+    assert '$branch -ne "main"' in script
+    assert "feature/armenian-voice" not in script
