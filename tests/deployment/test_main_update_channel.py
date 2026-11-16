@@ -106,7 +106,30 @@ def test_main_update_alert_is_visible_in_layout_without_manual_checks() -> None:
     assert "<MainSourceUpdate />" not in app
     assert '<div className="relative z-30 shrink-0">' in layout
     assert "<MainSourceUpdate />" in layout
-    assert 'role="alert" aria-live="assertive"' in widget
+    assert 'role="status"' in widget
+    assert 'aria-live="polite"' in widget
+    assert "max-w-[520px]" in widget
+    assert "pointer-events-none" in widget
     assert "Նոր թարմացում կա" in widget
     assert "Ավտոմատ ստուգում" in widget
     assert "onClick={() => void check()}" not in widget
+
+
+def test_expected_backend_restart_hides_only_transient_connection_error() -> None:
+    layout = (ROOT / "frontend" / "src" / "components" / "Layout.tsx").read_text(
+        encoding="utf-8"
+    )
+    widget = (FRONTEND / "MainSourceUpdate.tsx").read_text(encoding="utf-8")
+    assert "apiReachable === false && !backendRestarting" in layout
+    assert "openjarvis-backend-update" in layout
+    assert "openjarvis-backend-ready" in layout
+    assert "openjarvis-backend-timeout" in layout
+    assert "graceDeadline = Date.now() + 5 * 60 * 1000" in layout
+    assert "stage === 'waiting' && reachable" in layout
+    assert "window.setInterval" in layout
+    assert "openjarvis-backend-ready" in widget
+    assert "openjarvis-backend-timeout" in widget
+    assert "detail: 'updating'" in widget
+    assert "detail: 'waiting'" in widget
+    assert "Backend-ը վերագործարկվում է" in widget
+    assert "Թարմացնել / Update" in widget
