@@ -938,14 +938,14 @@ export function SettingsPage() {
 
           {/* Updates */}
           <Section title="Updates">
-            <SettingRow label="GitHub main updates" description="Check for new OpenJarvis backend source without PowerShell.">
+            <SettingRow label="GitHub main updates" description="Automatic main checks every 15 seconds; signed Desktop releases when available.">
               <MainSourceUpdate compact />
             </SettingRow>
             <SettingRow
               label="Auto-update"
               description={updaterBuildDisabled
-                ? 'Disabled for this isolated preview build'
-                : 'Check for new desktop builds automatically every 30 minutes'}
+                ? 'A one-time signed Desktop installation is required to activate .exe self-updates'
+                : 'Automatically check signed Desktop releases every minute'}
             >
               <button
                 onClick={() => handleAutoUpdateToggle(!autoUpdateEnabled)}

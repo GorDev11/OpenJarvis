@@ -238,8 +238,7 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
     }
   };
 
-  // Compact variant for the settings screen: provides a manual check even
-  // when GitHub has no update.
+  // Compact Settings view is read-only; the visible action lives in one card above.
   if (compact) {
     return (
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -249,11 +248,9 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
           Ավտոմատ ստուգում՝ յուրաքանչյուր 15 վայրկյանը մեկ
         </span>
         {(status?.update_available || desktopVersion) && (
-          <button type="button" onClick={() => void update()} disabled={(!desktopVersion && !status?.can_update) || updating.current || isStreaming}
-            className="rounded-lg border px-3 py-1.5 flex items-center gap-1.5"
-            style={{ borderColor: 'var(--color-accent)', color: 'var(--color-text)' }}>
-            <Download size={12} /> {phase === 'updating' || phase === 'restarting' ? 'Թարմացվում է...' : 'Թարմացնել / Update'}
-          </button>
+          <span style={{ color: 'var(--color-accent)' }}>
+            Նոր տարբերակ կա · Թարմացման կոճակը վերևում է
+          </span>
         )}
         <span style={{ color: 'var(--color-text-tertiary)' }}>
           {desktopVersion ? `Desktop v${desktopVersion}` : (status?.branch === 'main' ? 'main' : status?.branch || 'GitHub')} · {status?.current_sha?.slice(0, 7)}
