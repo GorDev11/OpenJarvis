@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar/Sidebar';
 import { SystemPulse } from './SystemPulse';
 import { useAppStore } from '../lib/store';
 import { checkHealth } from '../lib/api';
+import { MainSourceUpdate } from './Desktop/MainSourceUpdate';
 
 export function Layout() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
@@ -54,6 +55,11 @@ export function Layout() {
           </button>
         </div>
       )}
+
+      {/* Keep update actions inside the viewport on every route, including Settings. */}
+      <div className="relative z-30 shrink-0">
+        <MainSourceUpdate />
+      </div>
 
       <div className="flex flex-1 min-h-0 relative z-10">
         <Sidebar />

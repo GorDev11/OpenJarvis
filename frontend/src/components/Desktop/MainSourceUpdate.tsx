@@ -114,12 +114,11 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <button type="button" onClick={() => void check()} disabled={phase === 'checking' || phase === 'updating'}
-          className="rounded-lg border px-3 py-1.5 flex items-center gap-1.5"
-          style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
+        <span className="inline-flex items-center gap-1.5 font-medium" role="status"
+          style={{ color: 'var(--color-text-secondary)' }}>
           <RefreshCw size={12} className={phase === 'checking' ? 'animate-spin' : ''} />
-          Ստուգել GitHub main-ը
-        </button>
+          Ավտոմատ ստուգում՝ յուրաքանչյուր 15 վայրկյանը մեկ
+        </span>
         {status?.update_available && (
           <button type="button" onClick={() => void update()} disabled={!status.can_update || phase === 'updating'}
             className="rounded-lg border px-3 py-1.5 flex items-center gap-1.5"
@@ -143,18 +142,24 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <div role="status" className="flex flex-wrap gap-3 items-center justify-between px-5 py-3"
-      style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border)' }}>
+    <div role="alert" aria-live="assertive" className="flex flex-wrap gap-3 items-center justify-between px-5 py-3"
+      style={{
+        background: 'var(--color-bg-secondary)',
+        borderBottom: '2px solid var(--color-accent)',
+        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.10)',
+      }}>
       <div className="flex gap-2 items-center text-sm">
         {phase === 'updated' ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
         <div>
           <div className="font-semibold">
-            {phase === 'updated' ? 'Backend-ը թարմացվեց GitHub main-ից' : 'GitHub main-ում նոր փոփոխություններ կան'}
+            {phase === 'updated' ? 'Backend-ը թարմացվեց GitHub main-ից' : 'Նոր թարմացում կա · GitHub main'}
           </div>
           <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
             {phase === 'updated'
               ? 'Python backend is restarting. Compiled Desktop UI updates require a separate signed installer.'
-              : status?.message || 'Cannot check for updates'}
+              : status
+                ? `Նոր commit՝ ${status.latest_sha.slice(0, 7)} (տեղադրված՝ ${status.current_sha.slice(0, 7)}). ${status.can_update ? 'Սեղմիր «Թարմացնել»՝ այն կիրառելու համար։' : status.message}`
+                : 'Cannot check for updates'}
           </div>
           {error && <div role="alert" className="text-xs" style={{ color: 'var(--color-error)' }}>{error}</div>}
         </div>

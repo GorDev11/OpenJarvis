@@ -33,9 +33,11 @@ def test_git_main_update_is_fast_forward_and_does_not_reset() -> None:
 
 
 def test_chat_surfaces_main_update_notification() -> None:
-    app = (ROOT / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
+    layout = (ROOT / "frontend" / "src" / "components" / "Layout.tsx").read_text(
+        encoding="utf-8"
+    )
     widget = (FRONTEND / "MainSourceUpdate.tsx").read_text(encoding="utf-8")
-    assert "<MainSourceUpdate />" in app
+    assert "<MainSourceUpdate />" in layout
     assert "CHECK_EVERY_MS = 15 * 1000" in widget
     assert "apply_main_update" in widget
     assert "check_main_update" in widget
@@ -93,3 +95,18 @@ def test_main_update_checks_quickly_without_overlapping_requests() -> None:
     assert "window.removeEventListener('focus'" in widget
     assert "document.removeEventListener('visibilitychange'" in widget
     assert "setLastCheckedAt" in widget
+
+
+def test_main_update_alert_is_visible_in_layout_without_manual_checks() -> None:
+    app = (ROOT / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
+    layout = (ROOT / "frontend" / "src" / "components" / "Layout.tsx").read_text(
+        encoding="utf-8"
+    )
+    widget = (FRONTEND / "MainSourceUpdate.tsx").read_text(encoding="utf-8")
+    assert "<MainSourceUpdate />" not in app
+    assert '<div className="relative z-30 shrink-0">' in layout
+    assert "<MainSourceUpdate />" in layout
+    assert "role=\"alert\" aria-live=\"assertive\"" in widget
+    assert "Նոր թարմացում կա" in widget
+    assert "Ավտոմատ ստուգում" in widget
+    assert "onClick={() => void check()}" not in widget

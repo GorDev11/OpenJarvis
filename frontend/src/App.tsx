@@ -15,7 +15,6 @@ import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
-import { MainSourceUpdate } from './components/Desktop/MainSourceUpdate';
 import { track, hashId } from './lib/analytics';
 import { offerAnalyticsChoice } from './lib/analytics-invitation';
 
@@ -192,7 +191,6 @@ export default function App() {
   return (
     <>
       <UpdateChecker />
-      <MainSourceUpdate />
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<ChatPage />} />
