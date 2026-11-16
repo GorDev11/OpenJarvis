@@ -5,6 +5,7 @@ describe('connected-source query routing', () => {
   it('searches indexed Gmail data for a personal Armenian request', () => {
     expect(shouldSearchConnectedData('Կարո՞ղ ես ստուգել իմ Gmail-ը։')).toBe(true);
     expect(shouldSearchConnectedData('Գտիր իմ վերջին նամակները։')).toBe(true);
+    expect(shouldSearchConnectedData('Կարո՞ղ ես ստուգել իմ mail-ը։')).toBe(true);
   });
 
   it('works with English and Russian personal mail queries', () => {
