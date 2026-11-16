@@ -55,25 +55,44 @@ def test_unsigned_preview_never_installs_unsigned_desktop_update() -> None:
     assert "github.com/open-jarvis/OpenJarvis" not in workflow
 
 
-def test_signed_desktop_update_downloads_then_syncs_then_installs() -> None:
-    """On Windows Tauri exits during install; backend sync must precede it."""
-    source = (FRONTEND / "UpdateChecker.tsx").read_text(encoding="utf-8")
-    handler = source.split("const handleDownload = useCallback", 1)[1].split(
-        "const handleRelaunch = useCallback", 1
+def test_unified_update_card_downloads_signed_binary_then_syncs_backend() -> None:
+    """On Windows the native installer closes the app; sync comes first."""
+    source = (FRONTEND / "MainSourceUpdate.tsx").read_text(encoding="utf-8")
+    handler = source.split("  const update = useCallback", 1)[1].split(
+        "  if (!isTauri()) return null;", 1
     )[0]
-    assert "await update.download(" in handler
+    assert "await release.download(" in handler
     assert "'check_main_update'" in handler
     assert "'apply_main_update'" in handler
-    assert "await update.install()" in handler
-    assert "downloadAndInstall" not in handler
+    assert "await release.install()" in handler
     assert (
-        handler.index("await update.download(")
+        handler.index("await release.download(")
         < handler.index("'check_main_update'")
         < handler.index("'apply_main_update'")
-        < handler.index("await update.install()")
+        < handler.index("await release.install()")
     )
     assert "event.event === 'Started'" in handler
     assert "event.data?.contentLength" in handler
+    assert "if (!source.can_update)" in handler
+    assert "await invoke<string>('apply_main_update'" in handler
+
+
+def test_only_one_visible_update_card_and_preview_cannot_install_binary() -> None:
+    app = (ROOT / "frontend" / "src" / "App.tsx").read_text(
+        encoding="utf-8"
+    )
+    preferences = (FRONTEND / "UpdateChecker.tsx").read_text(
+        encoding="utf-8"
+    )
+    widget = (FRONTEND / "MainSourceUpdate.tsx").read_text(
+        encoding="utf-8"
+    )
+    assert "<UpdateChecker />" not in app
+    assert "export function UpdateChecker()" not in preferences
+    assert "isUpdaterBuildDisabled()" in widget
+    assert "const release = signedUpdate.current" in widget
+    assert "await release.install()" in widget
+    assert "CHECK_SIGNED_EVERY_MS = 60 * 1000" in widget
 
 
 def test_signed_rust_tests_require_built_tauri_assets() -> None:
