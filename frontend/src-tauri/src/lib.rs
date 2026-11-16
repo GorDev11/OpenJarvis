@@ -513,6 +513,13 @@ impl ChildHandle {
 /// source reset.  Every subprocess on the boot path must opt in here (or call
 /// `kill_on_drop(true)` before `output()`).
 fn spawn_owned_child(cmd: &mut tokio::process::Command) -> std::io::Result<tokio::process::Child> {
+    #[cfg(target_os = "windows")]
+    {
+        // A GUI app must not spawn a visible uv.exe / cmd.exe console
+        // each time its managed backend synchronizes or restarts.
+        use std::os::windows::process::CommandExt as _;
+        cmd.as_std_mut().creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
     cmd.kill_on_drop(true);
     cmd.spawn()
 }
@@ -1105,6 +1112,11 @@ async fn verify_openjarvis_rust_extension(
     prepare_backend_python(&mut cmd);
     add_cargo_bin_to_path(&mut cmd);
     cmd.kill_on_drop(true);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt as _;
+        cmd.as_std_mut().creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
 
     match cmd.output().await {
         Ok(out) if out.status.success() => Ok(()),
