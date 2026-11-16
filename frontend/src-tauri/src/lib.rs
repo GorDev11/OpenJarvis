@@ -9,6 +9,11 @@ use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
 
 const OLLAMA_PORT: u16 = 11434;
+// The Preview owns a separate API port; the upstream Desktop keeps port 8000.
+// Both distributions can share the existing Ollama instance on port 11434.
+#[cfg(feature = "armenian-preview")]
+const JARVIS_PORT: u16 = 18761;
+#[cfg(not(feature = "armenian-preview"))]
 const JARVIS_PORT: u16 = 8000;
 #[cfg(not(all(target_os = "windows", target_arch = "aarch64")))]
 const DESKTOP_UV_SYNC_COMMAND: &str =
@@ -1500,6 +1505,17 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             .send()
             .await
         {
+            Ok(resp) if INSTALL_SCOPED_BACKEND => {
+                // The Preview must never adopt another app's API server.
+                // A healthy /health response does not prove process ownership.
+                let mut s = status.lock().await;
+                s.error = Some(format!(
+                    "Preview API port {} is occupied (HTTP {}). Close the previous                      Preview instance or free that port, then relaunch.                      The official OpenJarvis on port 8000 may remain running.",
+                    JARVIS_PORT,
+                    resp.status(),
+                ));
+                return;
+            }
             Ok(resp) if resp.status().is_success() => {
                 // Confirm with a second probe — the first might have caught
                 // a flickering server (engine half-loaded, dying mid-stop,
@@ -3617,7 +3633,7 @@ mod tests {
         startup_installed_model, upsert_engine_host, uv_sync_stderr_tail, BackendManager,
         ChildHandle, InferenceConfig, InferenceCredentialStore, PendingInferenceRollback,
         SetupStatus, SourceKind, DESKTOP_SOURCE_BRANCH, DESKTOP_SOURCE_REPOSITORY,
-        DESKTOP_UV_SYNC_COMMAND, INSTALL_SCOPED_BACKEND, PENDING_INFERENCE_API_KEY,
+        DESKTOP_UV_SYNC_COMMAND, INSTALL_SCOPED_BACKEND, JARVIS_PORT, PENDING_INFERENCE_API_KEY,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -3747,6 +3763,7 @@ mod tests {
                 "https://github.com/GorDev11/OpenJarvis.git"
             );
             assert_eq!(DESKTOP_SOURCE_BRANCH, Some("main"));
+            assert_eq!(JARVIS_PORT, 18761);
         } else {
             assert!(!INSTALL_SCOPED_BACKEND);
             assert_eq!(
@@ -3754,6 +3771,7 @@ mod tests {
                 "https://github.com/open-jarvis/OpenJarvis.git"
             );
             assert_eq!(DESKTOP_SOURCE_BRANCH, None);
+            assert_eq!(JARVIS_PORT, 8000);
         }
     }
 

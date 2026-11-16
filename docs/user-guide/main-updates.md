@@ -67,3 +67,16 @@ can use `git fetch origin main` then `git switch main` and
    no updates to unrelated checkouts.
 6. Separately provision signing before claiming that Desktop `.exe`
    updates are automatic. Never reuse the upstream release signing identity.
+
+
+## Preview API port isolation
+
+The official OpenJarvis Desktop remains on loopback port **8000**. The
+`armenian-preview` Tauri build runs its own managed Python API on
+`127.0.0.1:18761` to avoid the Windows 10048 collision when both editions
+are installed. The UI obtains that URL through the native `get_api_base`
+command. The shared Ollama model server continues to use `127.0.0.1:11434`.
+No third-party server is terminated. A foreign listener on the Preview's
+dedicated port is rejected rather than silently adopted. An explicitly
+configured custom API URL in Settings still takes precedence.
+A new Preview installer is needed for this native Rust change.

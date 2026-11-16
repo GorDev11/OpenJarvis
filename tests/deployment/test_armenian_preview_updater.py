@@ -50,3 +50,18 @@ def test_preview_rust_tests_require_built_tauri_assets() -> None:
     script = BUILD_SCRIPT.read_text(encoding="utf-8")
     build_command = 'Run-Checked "npm.cmd" @("run", "build:tauri:armenian-preview")'
     assert script.index(build_command) < script.index('Run-Checked "cargo" @(')
+
+def test_preview_uses_dedicated_api_port_and_does_not_attach_to_foreign_listener() -> None:
+    launcher = (ROOT / "frontend" / "src-tauri" / "src" / "lib.rs").read_text(
+        encoding="utf-8"
+    )
+    assert '#[cfg(feature = "armenian-preview")]\nconst JARVIS_PORT: u16 = 18761;' in launcher
+    assert '#[cfg(not(feature = "armenian-preview"))]\nconst JARVIS_PORT: u16 = 8000;' in launcher
+    assert "Ok(resp) if INSTALL_SCOPED_BACKEND => {" in launcher
+    assert "Preview must never adopt another app's API server" in launcher
+    assert "fn get_api_base()" in launcher
+    assert 'JARVIS_PORT.to_string()' in launcher
+    assert "format!(\"http://127.0.0.1:{}\", JARVIS_PORT)" in launcher
+
+    settings = SETTINGS_PAGE.read_text(encoding="utf-8")
+    assert "placeholder={isTauri() ? getBase()" in settings
