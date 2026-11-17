@@ -43,13 +43,15 @@ def test_colibri_tool_failure_never_falls_back_to_no_tools() -> None:
             engine.generate(
                 [Message(role=Role.USER, content="Use calculator")],
                 model="qwen36-35b-local",
-                tools=[{
-                    "type": "function",
-                    "function": {
-                        "name": "calculator",
-                        "parameters": {"type": "object", "properties": {}},
-                    },
-                }],
+                tools=[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "calculator",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                ],
             )
         assert route.call_count == 1
 
