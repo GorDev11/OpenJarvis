@@ -1,6 +1,42 @@
 mod main_updates;
 mod colibri;
 
+// One-time owner signing enrollment from inside the currently isolated Preview.
+// This runs the reviewed local script only after an explicit Settings click;
+// the private key remains outside the repository and is uploaded using gh.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn launch_signed_update_setup() -> Result<(), String> {
+    use std::os::windows::process::CommandExt as _;
+
+    let root = find_project_root().ok_or_else(|| {
+        "OpenJarvis main source is missing; update the local checkout first.".to_string()
+    })?;
+    let script = root
+        .join("scripts")
+        .join("enable-desktop-auto-updates.ps1");
+    if !script.is_file() {
+        return Err("Updater setup script is missing; update GitHub main first.".into());
+    }
+    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+    std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-NoExit", "-File"])
+        .arg(&script)
+        .current_dir(&root)
+        .creation_flags(CREATE_NEW_CONSOLE)
+        .spawn()
+        .map_err(|e| format!("Could not open signed-update setup: {e}"))?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn launch_signed_update_setup() -> Result<(), String> {
+    Err("One-time signing enrollment is currently available on Windows only.".into())
+}
+
+
+
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -3602,6 +3638,7 @@ pub fn run() {
             stop_backend,
             main_updates::check_main_update,
             main_updates::apply_main_update,
+            launch_signed_update_setup,
             colibri::colibri_status,
             colibri::start_colibri_setup,
             colibri::colibri_test_tools,

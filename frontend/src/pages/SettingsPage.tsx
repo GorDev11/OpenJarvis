@@ -308,6 +308,26 @@ export function SettingsPage() {
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(
     () => !isUpdaterBuildDisabled() && !isAutoUpdateDisabled(),
   );
+  const [signedSetupError, setSignedSetupError] = useState('');
+  const [launchingSignedSetup, setLaunchingSignedSetup] = useState(false);
+
+  const launchSigningSetup = useCallback(async () => {
+    if (!window.confirm(
+      'Activate one-click signed Windows updates? This starts a one-time ' +
+      'GitHub signing setup in PowerShell. You will sign in to your own GitHub ' +
+      'account; private keys must never be sent in this chat.'
+    )) return;
+    setLaunchingSignedSetup(true);
+    setSignedSetupError('');
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('launch_signed_update_setup');
+    } catch (error) {
+      setSignedSetupError(String(error));
+    } finally {
+      setLaunchingSignedSetup(false);
+    }
+  }, []);
   const [updateCheckState, setUpdateCheckState] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
 
   const handleAutoUpdateToggle = useCallback((enabled: boolean) => {
@@ -965,6 +985,21 @@ export function SettingsPage() {
 
           {/* Updates */}
           <Section title="Updates">
+            {updaterBuildDisabled && (
+              <SettingRow label="Enable full-app updates"
+                description="One-time owner signing setup. After the first signed installation, Windows .exe updates happen inside OpenJarvis.">
+                <div className="flex flex-col items-end gap-2">
+                  <button type="button" disabled={launchingSignedSetup}
+                    onClick={() => void launchSigningSetup()}
+                    className="rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                    style={{ borderColor: 'var(--color-accent)', color: 'var(--color-text)' }}>
+                    {launchingSignedSetup ? 'Opening setup…' : 'Activate signed updates (once)'}
+                  </button>
+                  {signedSetupError && <span role="alert" className="text-xs"
+                    style={{ color: 'var(--color-error)' }}>{signedSetupError}</span>}
+                </div>
+              </SettingRow>
+            )}
             <SettingRow label="GitHub main updates" description="Automatic main checks every 15 seconds; signed Desktop releases when available.">
               <MainSourceUpdate compact />
             </SettingRow>
