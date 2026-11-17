@@ -44,6 +44,11 @@ def call(*args: str, cwd: Path | None = None) -> None:
 def model_is_running() -> bool:
     try:
         with urllib.request.urlopen(
+            f"http://127.0.0.1:{PORT}/health", timeout=3
+        ) as response:
+            if json.load(response).get("status") != "ok":
+                return False
+        with urllib.request.urlopen(
             f"http://127.0.0.1:{PORT}/v1/models", timeout=3
         ) as response:
             data = json.load(response)

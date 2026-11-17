@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 from pathlib import Path
 
 import httpx
@@ -74,12 +75,14 @@ def test_colibri_installer_accepts_official_default_model_id(monkeypatch) -> Non
     assert spec is not None and spec.loader is not None
     setup = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(setup)
-    class Response:
-        def __enter__(self):
-            return self
-        def __exit__(self, *_args):
-            return False
-        def read(self):
-            return b'{"data":[{"id":"qwen3.6-colibri"}]}'
-    monkeypatch.setattr(setup.urllib.request, "urlopen", lambda *_a, **_kw: Response())
+
+    def fake_urlopen(url: str, **_kwargs: object) -> io.BytesIO:
+        response = (
+            b'{"status":"ok"}'
+            if url.endswith("/health")
+            else b'{"data":[{"id":"qwen3.6-colibri"}]}'
+        )
+        return io.BytesIO(response)
+
+    monkeypatch.setattr(setup.urllib.request, "urlopen", fake_urlopen)
     assert setup.model_is_running()
