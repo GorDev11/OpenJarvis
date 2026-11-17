@@ -38,6 +38,8 @@ import {
   type MemoryStats,
 } from '../lib/api';
 import { MainSourceUpdate } from '../components/Desktop/MainSourceUpdate';
+import { ColibriSetup } from '../components/Desktop/ColibriSetup';
+import { colibriInferenceSource, isColibriInferenceSource } from '../lib/colibri';
 import {
   isAutoUpdateDisabled,
   isUpdaterBuildDisabled,
@@ -345,7 +347,8 @@ export function SettingsPage() {
     try { return parseInt(localStorage.getItem('openjarvis-memory-max-tokens') || '2048'); } catch { return 2048; }
   });
 
-  const [srcKind, setSrcKind] = useState<InferenceSource['kind']>('ollama');
+  const [srcKind, setSrcKind] = useState<InferenceSource['kind'] | 'colibri'>('ollama');
+  const [colibriModel, setColibriModel] = useState<string | null>(null);
   const [customHost, setCustomHost] = useState('http://localhost:1234/v1');
   const [customModel, setCustomModel] = useState('');
   const [customEngine, setCustomEngine] = useState('lmstudio');
@@ -354,7 +357,7 @@ export function SettingsPage() {
 
   useEffect(() => {
     getInferenceSource().then((s) => {
-      setSrcKind(s.kind);
+      setSrcKind(isColibriInferenceSource(s) ? 'colibri' : s.kind);
       if (s.host) setCustomHost(s.host);
       if (s.model) setCustomModel(s.model);
       if (s.engine) setCustomEngine(s.engine);
@@ -363,7 +366,9 @@ export function SettingsPage() {
 
   const saveSource = useCallback(async () => {
     try {
-      if (srcKind === 'custom') {
+      if (srcKind === 'colibri') {
+        await setInferenceSource(colibriInferenceSource(colibriModel ?? ''));
+      } else if (srcKind === 'custom') {
         await setInferenceSource({ kind: 'custom', host: customHost, model: customModel, engine: customEngine, apiKey: customKey || undefined });
       } else {
         await setInferenceSource({ kind: 'ollama' });
@@ -372,7 +377,7 @@ export function SettingsPage() {
     } catch (e: any) {
       setSrcMsg(e?.message ?? 'Failed to save.');
     }
-  }, [srcKind, customHost, customModel, customEngine, customKey]);
+  }, [srcKind, colibriModel, customHost, customModel, customEngine, customKey]);
 
   const refreshMemoryStatus = useCallback(async () => {
     const requestId = ++memoryRequestId.current;
@@ -589,9 +594,15 @@ export function SettingsPage() {
                 style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
               >
                 <option value="ollama">Bundled Ollama (default)</option>
+                <option value="colibri">Colibri · Qwen3.6-35B-A3B (local)</option>
                 <option value="custom">Custom OpenAI-compatible server</option>
               </select>
             </SettingRow>
+            {srcKind === 'colibri' && (
+              <SettingRow label="Colibri setup" description="Opt-in local setup, connection status and model tool-call test.">
+                <ColibriSetup onReady={setColibriModel} />
+              </SettingRow>
+            )}
             {srcKind === 'custom' && (
               <>
                 <SettingRow label="Server URL" description="e.g. LM Studio: http://localhost:1234/v1">
