@@ -85,11 +85,15 @@ def test_cancelled_stream_wakes_without_waiting_for_agent_output():
             raise RuntimeError("cancelled")
 
         request = ChatCompletionRequest(
-            model="test-model", messages=[{"role": "user", "content": "Hello"}],
+            model="test-model",
+            messages=[{"role": "user", "content": "Hello"}],
             stream=True,
         )
         bridge = AgentStreamBridge(
-            MagicMock(), EventBus(), "test-model", request,
+            MagicMock(),
+            EventBus(),
+            "test-model",
+            request,
             runner=blocked_runner,
         )
         stream = bridge.stream()

@@ -109,7 +109,6 @@ async def cancel_chat_completion(request_id: str, request: Request):
     return {"status": registry.cancel(request_id)}
 
 
-
 def _to_messages(chat_messages) -> list[Message]:
     """Convert Pydantic ChatMessage objects to core Message objects."""
     messages = []
