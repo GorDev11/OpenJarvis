@@ -159,6 +159,9 @@ interface AppState {
   models: ModelInfo[];
   modelsLoading: boolean;
   selectedModel: string;
+  // Increments only for an intentional model-picker action, NOT for automatic
+  // model discovery/fallback. Active chat requests keep their captured model.
+  modelSelectionEpoch: number;
   serverInfo: ServerInfo | null;
   savings: SavingsData | null;
 
@@ -283,6 +286,7 @@ export const useAppStore = create<AppState>((set, get) => {
     models: [],
     modelsLoading: true,
     selectedModel: '',
+    modelSelectionEpoch: 0,
     serverInfo: null,
     savings: null,
 
@@ -513,7 +517,13 @@ export const useAppStore = create<AppState>((set, get) => {
         return { models };
       }),
     setModelsLoading: (loading: boolean) => set({ modelsLoading: loading }),
-    setSelectedModel: (model: string) => set({ selectedModel: model }),
+    setSelectedModel: (model: string) =>
+      set((state) => ({
+        selectedModel: model,
+        modelSelectionEpoch: model === state.selectedModel
+          ? state.modelSelectionEpoch
+          : state.modelSelectionEpoch + 1,
+      })),
     setServerInfo: (info: ServerInfo | null) => set({ serverInfo: info }),
     setSavings: (data: SavingsData | null) => set({ savings: data }),
     incrementSavings: (usage: TokenUsage) => {
