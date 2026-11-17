@@ -19,16 +19,14 @@ def test_cancel_endpoint_signals_registered_agent():
     request_id = str(uuid.uuid4())
     bridge = MagicMock()
     assert app.state.chat_cancellations.register(request_id, bridge)
-    assert (
-        client.post(f"/v1/chat/cancel/{request_id}").json()
-        == {"status": "cancelling"}
-    )
+    assert client.post(f"/v1/chat/cancel/{request_id}").json() == {
+        "status": "cancelling"
+    }
     bridge.cancel.assert_called_once_with()
     app.state.chat_cancellations.unregister(request_id, bridge)
-    assert (
-        client.post(f"/v1/chat/cancel/{request_id}").json()
-        == {"status": "not_found"}
-    )
+    assert client.post(f"/v1/chat/cancel/{request_id}").json() == {
+        "status": "not_found"
+    }
 
 
 def test_invalid_duplicate_and_foreign_cancellation():
@@ -43,9 +41,8 @@ def test_invalid_duplicate_and_foreign_cancellation():
     assert registry.register(request_id, first)
     assert not registry.register(request_id, second)
     registry.unregister(request_id, second)
-    assert (
-        client.post(f"/v1/chat/cancel/{request_id}").json()
-        == {"status": "cancelling"}
-    )
+    assert client.post(f"/v1/chat/cancel/{request_id}").json() == {
+        "status": "cancelling"
+    }
     first.cancel.assert_called_once_with()
     second.cancel.assert_not_called()
