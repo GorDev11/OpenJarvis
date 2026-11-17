@@ -43,8 +43,10 @@ fn find_qwen36(value: &serde_json::Value) -> Option<String> {
         .filter_map(|m| m.get("id")?.as_str())
         .find(|id| {
             let s = id.to_ascii_lowercase();
-            (s.contains("qwen36") || s.contains("qwen3.6") || s.contains("qwen3-6"))
-                && (s.contains("35b") || s.contains("35-b"))
+            s == "qwen3.6-colibri"
+                || ((s.contains("qwen36") || s.contains("qwen3.6")
+                    || s.contains("qwen3-6"))
+                    && (s.contains("35b") || s.contains("35-b")))
         })
         .map(str::to_string)
 }
@@ -235,6 +237,8 @@ mod tests {
 
     #[test]
     fn only_chooses_qwen36_35b_from_live_model_list() {
+        assert_eq!(find_qwen36(&serde_json::json!({"data":[{"id":"qwen3.6-colibri"}]})),
+            Some("qwen3.6-colibri".into()));
         assert_eq!(find_qwen36(&serde_json::json!({"data":[{"id":"qwen3.6-35b-a3b"}]})),
             Some("qwen3.6-35b-a3b".into()));
         assert!(find_qwen36(&serde_json::json!({"data":[{"id":"qwen3.5:9b"}]})).is_none());

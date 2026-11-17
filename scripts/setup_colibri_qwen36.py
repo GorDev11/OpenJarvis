@@ -53,7 +53,11 @@ def model_is_running() -> bool:
             if isinstance(item, dict)
         ]
         return any(
-            ("qwen" in name and ("35b" in name or "35-b" in name))
+            name == "qwen3.6-colibri"
+            or (
+                ("qwen36" in name or "qwen3.6" in name or "qwen3-6" in name)
+                and ("35b" in name or "35-b" in name)
+            )
             for name in names
         )
     except (OSError, ValueError, TypeError, KeyError):

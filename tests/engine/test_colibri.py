@@ -67,3 +67,19 @@ def test_pinned_installer_does_not_use_remote_shell_pipe() -> None:
     assert setup.accepted_origin("https://github.com/JustVugg/colibri.git")
     assert not setup.accepted_origin("https://github.com/other/colibri.git")
     assert len(setup.PINNED_COMMIT) == 40
+
+def test_colibri_installer_accepts_official_default_model_id(monkeypatch) -> None:
+    path = Path(__file__).parents[2] / "scripts" / "setup_colibri_qwen36.py"
+    spec = importlib.util.spec_from_file_location("colibri_setup_id_test", path)
+    assert spec is not None and spec.loader is not None
+    setup = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(setup)
+    class Response:
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return False
+        def read(self):
+            return b'{"data":[{"id":"qwen3.6-colibri"}]}'
+    monkeypatch.setattr(setup.urllib.request, "urlopen", lambda *_a, **_kw: Response())
+    assert setup.model_is_running()
