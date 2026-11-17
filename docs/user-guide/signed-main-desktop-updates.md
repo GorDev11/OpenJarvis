@@ -16,6 +16,24 @@ the canonical source of truth:
 You must provision signing material under your control. NEVER commit or share
 the private key, including through ChatGPT or an issue/PR.
 
+**Simpler Windows setup:** From a trusted checkout on the `main` branch,
+run `powershell -ExecutionPolicy Bypass -File .\\scripts\\enable-desktop-auto-updates.ps1`.
+The script checks the correct GitHub remote, uses GitHub CLI authentication,
+creates a private updater key in your Windows profile only if one does not
+already exist, uploads only to GitHub Actions encrypted secrets, configures
+the owner-controlled public key and starts the signed-release workflow. The
+password is never printed or passed as a process argument. You must have
+`git`, `npm` and the official `gh` CLI installed; the script never
+silently installs new system software. Back up the private key and password
+safely. If you already have a signing keypair, the script reuses it rather
+than overwriting the key.
+
+**The first signed release still requires one manual installation.** The
+existing isolated Preview has no pinned trusted public key and cannot
+securely update its own executable. After that one-time migration, future
+signed `.exe` releases are verified by Tauri and installed inside OpenJarvis
+without GitHub browsing or PowerShell.
+
 - Create a Tauri updater signing keypair on your **trusted computer** using
   the Tauri CLI (`npx tauri signer generate` from the `frontend` folder);
   store the generated private key outside the repository in secure storage.
@@ -39,8 +57,11 @@ matching private key, the build fails visibly and publishes nothing.
 with its updater disabled, so it cannot bootstrap a trusted public signing
 key from the internet. Install the first owner-signed `desktop-main` installer
 yourself from GitHub Releases. After that, the built-in Tauri Update Checker
-can automatically detect and (on click) download/install newer signed
-releases and offer Relaunch. The signed build uses
+automatically checks newer signed releases every minute, supports
+one-click download/install, and can optionally install signed updates after
+60 seconds of inactivity. The opt-in setting explicitly warns that Windows
+will relaunch the app. Updates are never installed while an AI response is
+streaming. The signed build uses
 `frontend/.env.armenian-release` to enable the owner's updater endpoint.
 The old unsigned Preview uses `.env.armenian-preview` and stays isolated.
 
@@ -68,7 +89,8 @@ discovers it at the next signed check. No unsigned artifact is ever executed.
 manually after configuring the signing keys. Thereafter subsequent signed
 releases use the in-app Update action. Pushes changing frontend or Python
 application code trigger the signed workflow; documentation-only commits
-only trigger the source checker. All installations remain opt-in.
+only trigger the source checker. Automatic installation remains opt-in and never bypasses signature
+validation, streaming safety, or the first trusted bootstrap.
 
 **Validation**: Confirm the Windows installer was built from `main`, the
 installed `src` checkout is on `main`, the release manifest has
