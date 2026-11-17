@@ -9,6 +9,8 @@ type ColibriStatus = {
   message: string;
   error: string | null;
   log_tail: string;
+  /** Official Colibri setup backend; not a live GPU-utilization measurement. */
+  backend?: "cuda" | "vulkan" | "cpu" | null;
 };
 
 type ToolCheck = { success: boolean; detail: string };
@@ -96,6 +98,14 @@ export function ColibriSetup({ onReady }: { onReady: (model: string | null) => v
         {status?.message ?? 'Checking local Colibri server…'}
         {status?.model ? ` · Model: ${status.model}` : ''}
       </div>
+      {status?.ready && (
+        <div className="text-xs" style={{ color: status.backend === "cpu" ? "var(--color-error)" : "var(--color-text-secondary)" }}>
+          Official Colibri setup backend: <strong>{status.backend?.toUpperCase() ?? "not reported"}</strong>
+          {status.backend === "cpu" && " — GPU acceleration is not configured; check Colibri installation logs."}
+          {status.backend && status.backend !== "cpu" && " — selected backend; verify live GPU usage with Colibri logs."}
+          {!status.backend && " — inspect the official Colibri setup status to verify GPU acceleration."}
+        </div>
+      )}
       <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
         Local only · 127.0.0.1:19000 · ~23 GB model download · Ollama remains available
       </div>
