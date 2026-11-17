@@ -69,6 +69,7 @@ def test_pinned_installer_does_not_use_remote_shell_pipe() -> None:
     assert not setup.accepted_origin("https://github.com/other/colibri.git")
     assert len(setup.PINNED_COMMIT) == 40
 
+
 def test_colibri_installer_accepts_official_default_model_id(monkeypatch) -> None:
     path = Path(__file__).parents[2] / "scripts" / "setup_colibri_qwen36.py"
     spec = importlib.util.spec_from_file_location("colibri_setup_id_test", path)
