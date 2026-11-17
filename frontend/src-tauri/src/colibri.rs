@@ -7,6 +7,7 @@ use tauri::State;
 use tokio::sync::Mutex;
 
 const MODELS_URL: &str = "http://127.0.0.1:19000/v1/models";
+const HEALTH_URL: &str = "http://127.0.0.1:19000/health";
 
 #[derive(Default)]
 pub(crate) struct ColibriSetupState(pub(crate) Arc<Mutex<SetupProcess>>);
@@ -52,6 +53,16 @@ fn find_qwen36(value: &serde_json::Value) -> Option<String> {
 pub(crate) async fn probe_model() -> Result<String, String> {
     let client = reqwest::Client::builder().timeout(Duration::from_secs(4))
         .build().map_err(|e| e.to_string())?;
+    let health = client.get(HEALTH_URL).send().await
+        .map_err(|e| format!("Colibri health check failed: {e}"))?;
+    if !health.status().is_success() {
+        return Err(format!("Colibri is loading or unavailable: HTTP {}", health.status()));
+    }
+    let health_data: serde_json::Value = health.json().await
+        .map_err(|e| format!("Invalid Colibri health response: {e}"))?;
+    if health_data.get("status").and_then(serde_json::Value::as_str) != Some("ok") {
+        return Err("Colibri engine is not ready.".into());
+    }
     let response = client.get(MODELS_URL).send().await
         .map_err(|e| format!("Colibri not reachable on 127.0.0.1:19000: {e}"))?;
     if !response.status().is_success() {
@@ -150,6 +161,18 @@ pub(crate) async fn start_colibri_setup(state: State<'_, ColibriSetupState>)
 /// Relaunch installed Colibri when selected. Never installs on startup.
 pub(crate) async fn start_if_installed() -> Result<(), String> {
     if probe_model().await.is_ok() { return Ok(()); }
+    // Do not attempt a second model server while Colibri reloads after a
+    // temporary engine failure. Its /health returns 503 "restarting".
+    if let Ok(client) = reqwest::Client::builder().timeout(Duration::from_secs(3)).build() {
+        if let Ok(res) = client.get(HEALTH_URL).send().await {
+            if let Ok(value) = res.json::<serde_json::Value>().await {
+                if matches!(value.get("status").and_then(serde_json::Value::as_str),
+                    Some("ok" | "restarting")) {
+                    return Ok(());
+                }
+            }
+        }
+    }
     let launcher = data_dir().join("source/c/coli");
     if !launcher.is_file() {
         return Err("Colibri is not installed. Use Install in Settings first.".into());
@@ -183,7 +206,7 @@ pub(crate) async fn colibri_test_tools() -> Result<ColibriToolCheck, String> {
         .build().map_err(|e| e.to_string())?;
     let response = client.post("http://127.0.0.1:19000/v1/chat/completions")
         .json(&serde_json::json!({
-            "model":model, "stream":false, "temperature":0, "max_tokens":128,
+            "model":model, "stream":false, "temperature":0, "max_tokens":384,
             "messages":[{"role":"user","content":"Use calculator to compute 17+25."}],
             "tools":[{"type":"function","function":{"name":"calculator",
                 "description":"Compute a mathematical expression",
