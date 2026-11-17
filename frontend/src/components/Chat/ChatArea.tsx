@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
+import { ChatPermissionMode, InlineChatToolApprovals } from './ChatPermissions';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
 import { shouldAutoplayFinishedReply, useTtsStore } from '../../lib/tts';
@@ -209,7 +210,8 @@ export function ChatArea() {
   return (
     <div className="flex flex-col h-full">
       {/* Toggle bar */}
-      <div className="flex items-center justify-end px-3 py-1.5 shrink-0">
+      <div className="flex items-center justify-end gap-3 px-3 py-1.5 shrink-0">
+        <ChatPermissionMode />
         <button
           onClick={toggleSystemPanel}
           className="p-1.5 rounded-md transition-colors cursor-pointer"
@@ -329,6 +331,7 @@ export function ChatArea() {
           </div>
         )}
       </div>
+      <InlineChatToolApprovals />
       <InputArea />
     </div>
   );

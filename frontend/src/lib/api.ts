@@ -1195,6 +1195,56 @@ export async function denyAction(actionId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Live Desktop Chat tool approvals (distinct from proactive-agent approvals)
+// ---------------------------------------------------------------------------
+
+export type ChatToolMode = 'autonomous' | 'guided';
+
+export type ChatToolPermission = {
+  id: string;
+  tool: string;
+  prompt: string;
+};
+
+export async function getChatToolMode(): Promise<ChatToolMode> {
+  const response = await apiFetch('/v1/chat-permissions/mode');
+  if (!response.ok) throw new Error(`Permission settings unavailable (${response.status})`);
+  const data = await response.json();
+  return data.mode as ChatToolMode;
+}
+
+export async function setChatToolMode(mode: ChatToolMode): Promise<void> {
+  const response = await apiFetch('/v1/chat-permissions/mode', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+  if (!response.ok) throw new Error(`Could not save permission mode (${response.status})`);
+}
+
+export async function getPendingChatToolPermissions(): Promise<ChatToolPermission[]> {
+  const response = await apiFetch('/v1/chat-permissions/pending');
+  if (!response.ok) throw new Error(`Could not load tool approvals (${response.status})`);
+  const data = await response.json();
+  return data.requests || [];
+}
+
+export async function resolveChatToolPermission(
+  id: string,
+  allow: boolean,
+): Promise<void> {
+  const response = await apiFetch(
+    `/v1/chat-permissions/${encodeURIComponent(id)}/decision`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allow }),
+    },
+  );
+  if (!response.ok) throw new Error(`Permission expired or unavailable (${response.status})`);
+}
+
+// ---------------------------------------------------------------------------
 // Inference source (desktop only)
 // ---------------------------------------------------------------------------
 
