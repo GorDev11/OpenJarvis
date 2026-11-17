@@ -260,7 +260,15 @@ export async function deleteModel(modelName: string): Promise<void> {
 const _CLOUD_PREFIXES = ['gpt-', 'o1-', 'o3-', 'o4-', 'claude-', 'gemini-', 'openrouter/'];
 
 export async function preloadModel(modelName: string, owner?: string): Promise<void> {
-  // Cloud models don't need Ollama preloading
+  // The Colibri engine is initialized by the desktop backend at port 19000,
+  // not by Ollama at port 11434. Asking Ollama to preload the Colibri model
+  // produces a misleading "Failed to fetch" on the model picker.
+  // A model lookup may not include owned_by, so also recognize the installed
+  // Colibri alias used by the Armenian Preview.
+  if (owner === 'colibri' || modelName === 'qwen3.6-colibri') {
+    return;
+  }
+  // Cloud models don't need Ollama preloading.
   if (owner === 'litellm' || _CLOUD_PREFIXES.some(p => modelName.startsWith(p))) {
     return;
   }
