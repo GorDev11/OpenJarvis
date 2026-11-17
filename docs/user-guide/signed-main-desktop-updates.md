@@ -17,7 +17,8 @@ You must provision signing material under your control. NEVER commit or share
 the private key, including through ChatGPT or an issue/PR.
 
 **Simpler Windows setup:** From a trusted checkout on the `main` branch,
-run `powershell -ExecutionPolicy Bypass -File .\\scripts\\enable-desktop-auto-updates.ps1`.
+**double-click `scripts/enable-desktop-auto-updates.cmd`** in Windows Explorer.
+Alternatively run `powershell -ExecutionPolicy Bypass -File .\\scripts\\enable-desktop-auto-updates.ps1`.
 The script checks the correct GitHub remote, uses GitHub CLI authentication,
 creates a private updater key in your Windows profile only if one does not
 already exist, uploads only to GitHub Actions encrypted secrets, configures
