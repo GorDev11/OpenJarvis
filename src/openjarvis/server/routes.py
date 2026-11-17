@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 import uuid
 import weakref
 from dataclasses import replace
@@ -43,26 +44,49 @@ class ChatCancellationRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._active: dict[str, Any] = {}
+        # A Stop may arrive before streaming registration. Remember it briefly.
+        self._pending: dict[str, float] = {}
+        self._finished: dict[str, float] = {}
+
+    def _prune_locked(self) -> None:
+        now = time.monotonic()
+        for mapping in (self._pending, self._finished):
+            for key, timestamp in tuple(mapping.items()):
+                if now - timestamp > 90.0:
+                    mapping.pop(key, None)
+            while len(mapping) > 256:
+                mapping.pop(next(iter(mapping)))
 
     def register(self, request_id: str, bridge: Any) -> bool:
         with self._lock:
-            if request_id in self._active:
+            self._prune_locked()
+            if request_id in self._active or request_id in self._finished:
                 return False
             self._active[request_id] = bridge
-            return True
-
-    def cancel(self, request_id: str) -> bool:
-        with self._lock:
-            bridge = self._active.get(request_id)
-        if bridge is None:
-            return False
-        bridge.cancel()
+            cancel_pending = self._pending.pop(request_id, None) is not None
+        if cancel_pending:
+            bridge.cancel()
         return True
+
+    def cancel(self, request_id: str) -> str:
+        with self._lock:
+            self._prune_locked()
+            bridge = self._active.get(request_id)
+            if bridge is None:
+                if request_id in self._finished:
+                    return "not_found"
+                self._pending[request_id] = time.monotonic()
+                self._prune_locked()
+                return "pending"
+        bridge.cancel()
+        return "cancelling"
 
     def unregister(self, request_id: str, bridge: Any) -> None:
         with self._lock:
             if self._active.get(request_id) is bridge:
                 del self._active[request_id]
+                self._finished[request_id] = time.monotonic()
+                self._prune_locked()
 
 
 def _valid_chat_request_id(value: str) -> bool:
@@ -78,9 +102,11 @@ async def cancel_chat_completion(request_id: str, request: Request):
     if not _valid_chat_request_id(request_id):
         raise HTTPException(status_code=400, detail="Invalid chat request ID")
     registry = getattr(request.app.state, "chat_cancellations", None)
-    if registry is not None and registry.cancel(request_id):
-        return {"status": "cancelling"}
-    return {"status": "not_found"}
+    if registry is None:
+        return {"status": "not_found"}
+    # "pending" is an early Stop accepted, not confirmation that the
+    # underlying inference engine has already released its slot.
+    return {"status": registry.cancel(request_id)}
 
 
 
@@ -823,6 +849,7 @@ async def _handle_agent_stream(
             async for chunk in bridge.stream():
                 yield chunk
         finally:
+            bridge.cancel()
             if request_id and cancellation_registry is not None:
                 cancellation_registry.unregister(request_id, bridge)
 

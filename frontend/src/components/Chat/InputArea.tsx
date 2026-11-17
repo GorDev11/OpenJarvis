@@ -563,12 +563,15 @@ export function InputArea() {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-      resetStream();
+      // A stopped stream can finish after a newer turn starts: never reset it.
+      if (abortRef.current === controller) {
+        resetStream();
+        abortRef.current = null;
+      }
       useAppStore.getState().addLogEntry({
         timestamp: Date.now(), level: 'info', category: 'chat',
         message: `Response: ${accumulatedContent.length} chars`,
       });
-      if (abortRef.current === controller) abortRef.current = null;
       if (chatRequestIdRef.current === chatRequestId) chatRequestIdRef.current = null;
 
       // Research path updates session counters optimistically from the

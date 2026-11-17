@@ -39,6 +39,7 @@ _EVENT_MAP = {
 
 # Sentinel signalling that the agent thread has finished
 _DONE = object()
+_CANCELLED = object()
 logger = logging.getLogger("openjarvis.server")
 
 
@@ -104,10 +105,17 @@ class AgentStreamBridge:
         self._callbacks: dict[EventType, object] = {}
         self._content_callback: Optional[Callable[[str], None]] = None
         self._cancel_event = threading.Event()
+        self._stream_loop: Optional[asyncio.AbstractEventLoop] = None
 
     def cancel(self) -> None:
-        """Ask the agent to close its active upstream model request."""
+        """Signal upstream cancellation and wake a waiting SSE reader."""
         self._cancel_event.set()
+        loop = self._stream_loop
+        if loop is not None and loop.is_running():
+            try:
+                loop.call_soon_threadsafe(self._queue.put_nowait, _CANCELLED)
+            except RuntimeError:
+                pass  # Loop is shutting down; cancellation flag remains set.
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -193,6 +201,9 @@ class AgentStreamBridge:
 
         # Kick off agent.run() in a background thread
         loop = asyncio.get_running_loop()
+        self._stream_loop = loop
+        if self._cancel_event.is_set():
+            return
 
         def _emit_content(content: str) -> None:
             if content:
@@ -229,6 +240,8 @@ class AgentStreamBridge:
             while True:
                 item = await self._queue.get()
 
+                if item is _CANCELLED or self._cancel_event.is_set():
+                    return
                 if item is _DONE:
                     break
 
@@ -391,6 +404,9 @@ class AgentStreamBridge:
             # cancelled and the thread exits promptly after a client Stop/
             # disconnect instead of consuming the full generation unseen.
             self._cancel_event.set()
+            if not agent_task.done():
+                agent_task.cancel()
+            self._stream_loop = None
             self._unsubscribe_all()
             self._content_callback = None
 

@@ -83,7 +83,9 @@ export async function cancelChat(requestId: string): Promise<boolean> {
     });
     if (!response.ok) return false;
     const result = await response.json() as { status?: string };
-    return result.status === 'cancelling';
+    // Stop may arrive before the stream is registered; that early
+    // cancellation is retained by the backend until registration.
+    return result.status === 'cancelling' || result.status === 'pending';
   } catch {
     return false;
   }
