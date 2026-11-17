@@ -30,13 +30,30 @@ _SENSITIVE = re.compile(
 )
 # Unknown tools are not silently treated as read-only. A tight allowlist
 # means new integrations need an explicit security review before auto-use.
-_READ_ONLY = frozenset({
-    "web_search", "browser_navigate", "browser_read", "file_read",
-    "knowledge_search", "calculator", "memory_search", "web_fetch",
-    "search_files", "list_files", "get_weather", "read_url",
-    "browser_snapshot", "time", "get_current_time", "read_email",
-    "gmail_search", "gmail_read", "calendar_list", "contacts_search",
-})
+_READ_ONLY = frozenset(
+    {
+        "web_search",
+        "browser_navigate",
+        "browser_read",
+        "file_read",
+        "knowledge_search",
+        "calculator",
+        "memory_search",
+        "web_fetch",
+        "search_files",
+        "list_files",
+        "get_weather",
+        "read_url",
+        "browser_snapshot",
+        "time",
+        "get_current_time",
+        "read_email",
+        "gmail_search",
+        "gmail_read",
+        "calendar_list",
+        "contacts_search",
+    }
+)
 
 
 def mode_path() -> Path:
@@ -118,9 +135,7 @@ class ChatPermissionBroker:
     def pending(self) -> list[dict[str, str]]:
         with self._lock:
             return [
-                req.public()
-                for req in self._pending.values()
-                if not req.event.is_set()
+                req.public() for req in self._pending.values() if not req.event.is_set()
             ]
 
     def decide(self, request_id: str, allow: bool) -> bool:
@@ -142,6 +157,10 @@ def chat_tool_confirmation(prompt: str) -> bool:
 
 
 __all__ = [
-    "broker", "get_mode", "set_mode", "requires_chat_approval",
-    "chat_tool_confirmation", "ChatPermissionBroker",
+    "broker",
+    "get_mode",
+    "set_mode",
+    "requires_chat_approval",
+    "chat_tool_confirmation",
+    "ChatPermissionBroker",
 ]
