@@ -169,7 +169,7 @@ jobs:
           # Verify the public, unauthenticated download and its exact bytes.
           # If GitHub returns a 404 or corrupt payload, keep the previous
           # latest.json rather than advertising a broken signed update.
-          download_url="$(python -c 'import json,sys; p=json.load(open(sys.argv[1],encoding="utf-8-sig")); print(p["platforms"]["windows-x86_64"]["url"])' "$dir/latest.json")"
+          download_url="$(node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8").replace(/^\\uFEFF/,"")); process.stdout.write(p.platforms["windows-x86_64"].url)' "$dir/latest.json")"
           curl --fail --location --retry 6 --retry-all-errors --retry-delay 3 \
             --silent --show-error --output "$RUNNER_TEMP/openjarvis-update-public.exe" "$download_url"
           if ! cmp -s "$installer" "$RUNNER_TEMP/openjarvis-update-public.exe"; then
