@@ -1,4 +1,5 @@
 mod main_updates;
+mod colibri;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -1322,11 +1323,25 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             s.phase = "model".into();
             s.detail = format!("Connecting to {}...", host);
         }
-        if host.is_empty() || !endpoint_reachable(&host, Duration::from_secs(15)).await {
+        // The Colibri source is opt-in. Starting an already installed model
+        // is allowed; downloading a model requires an explicit Settings click.
+        let colibri_selected = cfg.engine.as_deref() == Some("colibri");
+        if colibri_selected {
+            if let Err(e) = colibri::start_if_installed().await {
+                status.lock().await.error = Some(e);
+                return;
+            }
+        }
+        let reachable = if colibri_selected {
+            colibri::wait_for_model(Duration::from_secs(240)).await.is_ok()
+        } else {
+            endpoint_reachable(&host, Duration::from_secs(15)).await
+        };
+        if host.is_empty() || !reachable {
             let mut s = status.lock().await;
             s.error = Some(format!(
                 "Could not reach your custom inference server at {}. \
-                 Start the server (e.g. LM Studio), or choose Change inference source below.",
+                 Start the selected server (Colibri or LM Studio), or change inference source.",
                 if host.is_empty() {
                     "(no URL set)"
                 } else {
@@ -3492,6 +3507,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(backend.clone())
         .manage(source_update_gate)
+        .manage(colibri::ColibriSetupState::default())
         .manage(status.clone())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
@@ -3586,6 +3602,9 @@ pub fn run() {
             stop_backend,
             main_updates::check_main_update,
             main_updates::apply_main_update,
+            colibri::colibri_status,
+            colibri::start_colibri_setup,
+            colibri::colibri_test_tools,
             reset_inference_source,
             check_health,
             fetch_energy,
