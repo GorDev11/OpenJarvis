@@ -19,5 +19,6 @@ export function isAutoUpdateDisabled(): boolean {
 export function setAutoUpdateDisabled(disabled: boolean): void {
   try {
     localStorage.setItem(AUTO_INSTALL_KEY, disabled ? '0' : '1');
+    window.dispatchEvent(new Event('openjarvis-auto-install-setting-changed'));
   } catch { /* No automatic installations if storage is unavailable. */ }
 }

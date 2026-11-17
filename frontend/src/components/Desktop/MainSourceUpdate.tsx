@@ -36,7 +36,14 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   const signedUpdate = useRef<any>(null);
   const checkingSigned = useRef(false);
   const installingDesktop = useRef(false);
+  const [autoInstallEnabled, setAutoInstallEnabled] = useState(() => !isAutoUpdateDisabled());
   const isStreaming = useAppStore(s => s.streamState.isStreaming);
+
+  useEffect(() => {
+    const onSettingChanged = () => setAutoInstallEnabled(!isAutoUpdateDisabled());
+    window.addEventListener('openjarvis-auto-install-setting-changed', onSettingChanged);
+    return () => window.removeEventListener('openjarvis-auto-install-setting-changed', onSettingChanged);
+  }, []);
 
   const check = useCallback(async () => {
     if (!isTauri() || updating.current || checking.current) return;
@@ -250,7 +257,7 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   // a chat response streams. No unsigned Preview can enter this path.
   useEffect(() => {
     if (compact || !isTauri() || isUpdaterBuildDisabled() ||
-        isAutoUpdateDisabled() || !desktopVersion || phase !== 'available' ||
+        !autoInstallEnabled || !desktopVersion || phase !== 'available' ||
         isStreaming) return;
     let lastActivity = Date.now();
     const activity = () => { lastActivity = Date.now(); };
@@ -273,7 +280,7 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
       window.removeEventListener('keydown', activity);
       window.removeEventListener('pointerdown', activity);
     };
-  }, [compact, desktopVersion, phase, isStreaming, update]);
+  }, [compact, autoInstallEnabled, desktopVersion, phase, isStreaming, update]);
 
   if (!isTauri()) return null;
 
