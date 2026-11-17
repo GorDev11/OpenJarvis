@@ -171,9 +171,9 @@ def test_signed_bootstrap_is_explicit_and_reuses_owner_keys() -> None:
 def test_signed_auto_install_requires_opt_in_and_stays_idle_safe() -> None:
     preferences = (FRONTEND / "UpdateChecker.tsx").read_text(encoding="utf-8")
     widget = (FRONTEND / "MainSourceUpdate.tsx").read_text(encoding="utf-8")
-    settings = (
-        ROOT / "frontend" / "src" / "pages" / "SettingsPage.tsx"
-    ).read_text(encoding="utf-8")
+    settings = (ROOT / "frontend" / "src" / "pages" / "SettingsPage.tsx").read_text(
+        encoding="utf-8"
+    )
     assert "return localStorage.getItem(AUTO_INSTALL_KEY) !== '1'" in preferences
     assert "60_000" in widget
     assert "isStreaming" in widget
