@@ -355,6 +355,15 @@ export function SettingsPage() {
   const [customKey, setCustomKey] = useState('');
   const [srcMsg, setSrcMsg] = useState('');
 
+  const handleColibriReady = useCallback((model: string | null) => {
+    setColibriModel(model);
+    if (model) {
+      // A prior premature Save can leave a stale validation error visible
+      // after the server has finished loading successfully.
+      setSrcMsg(prev => prev === 'Colibri Qwen3.6 model is not loaded. Install or start Colibri first.' ? '' : prev);
+    }
+  }, []);
+
   useEffect(() => {
     getInferenceSource().then((s) => {
       setSrcKind(isColibriInferenceSource(s) ? 'colibri' : s.kind);
@@ -600,7 +609,7 @@ export function SettingsPage() {
             </SettingRow>
             {srcKind === 'colibri' && (
               <SettingRow label="Colibri setup" description="Opt-in local setup, connection status and model tool-call test.">
-                <ColibriSetup onReady={setColibriModel} />
+                <ColibriSetup onReady={handleColibriReady} />
               </SettingRow>
             )}
             {srcKind === 'custom' && (
@@ -634,8 +643,8 @@ export function SettingsPage() {
               </>
             )}
             <SettingRow label="" description={srcMsg}>
-              <button onClick={saveSource}
-                className="text-sm px-3 py-1.5 rounded-lg outline-none cursor-pointer"
+              <button onClick={saveSource} disabled={srcKind === 'colibri' && !colibriModel}
+                className="text-sm px-3 py-1.5 rounded-lg outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: 'var(--color-accent, var(--color-bg-tertiary))', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
                 Save inference source
               </button>
