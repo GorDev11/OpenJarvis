@@ -86,10 +86,12 @@ export function InputArea() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const chatRequestIdRef = useRef<string | null>(null);
+  const cancellationReasons = useRef(new WeakMap<AbortController, string>());
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const activeId = useAppStore((s) => s.activeId);
   const selectedModel = useAppStore((s) => s.selectedModel);
+  const modelSelectionEpoch = useAppStore((s) => s.modelSelectionEpoch);
   const streamState = useAppStore((s) => s.streamState);
   const messages = useAppStore((s) => s.messages);
   const speechEnabled = useAppStore((s) => s.settings.speechEnabled);
@@ -115,10 +117,17 @@ export function InputArea() {
   } = useSpeech();
 
   // Signal cancellation to the backend before disconnecting the SSE reader.
-  const cancelActiveChat = useCallback(() => {
+  const cancelActiveChat = useCallback((reason: 'stop-button' | 'model-picker') => {
     const controller = abortRef.current;
     const requestId = chatRequestIdRef.current;
     chatRequestIdRef.current = null;
+    if (controller) {
+      cancellationReasons.current.set(controller, reason);
+      useAppStore.getState().addLogEntry({
+        timestamp: Date.now(), level: 'info', category: 'chat',
+        message: `Chat cancellation requested: ${reason}; requestId=${requestId ?? 'none'}`,
+      });
+    }
     if (!requestId) {
       controller?.abort();
       return;
@@ -132,13 +141,18 @@ export function InputArea() {
       .finally(() => controller?.abort());
   }, []);
 
-  // Abort in-flight stream when the user switches models mid-generation.
-  // This prevents errors from trying to continue a stream with a stale model.
-  const prevModelRef = useRef(selectedModel);
+  // Auto-discovery can replace a temporarily missing model in the selector.
+  // That is NOT permission to cancel the in-flight request: sendMessage has
+  // already captured its original model and conversation. Only an explicit
+  // choice in the model picker increments modelSelectionEpoch.
+  const prevSelectionRef = useRef({ model: selectedModel, epoch: modelSelectionEpoch });
   useEffect(() => {
-    if (prevModelRef.current !== selectedModel) {
+    const prev = prevSelectionRef.current;
+    const changed = prev.model !== selectedModel;
+    const explicitlyChanged = changed && prev.epoch !== modelSelectionEpoch;
+    if (explicitlyChanged) {
       if (streamState.isStreaming) {
-        cancelActiveChat();
+        cancelActiveChat('model-picker');
         const allMessages = useAppStore.getState().messages;
         const current = allMessages[allMessages.length - 1];
         if (current?.role === 'assistant') useTtsStore.getState().markAutoSpoken(current.id);
@@ -149,11 +163,15 @@ export function InputArea() {
         resetStream();
         abortRef.current = null;
       }
-      // Also interrupt speech from a reply that had already finished.
       useTtsStore.getState().stop();
+    } else if (changed && streamState.isStreaming) {
+      useAppStore.getState().addLogEntry({
+        timestamp: Date.now(), level: 'warn', category: 'chat',
+        message: `Automatic model catalog refresh: ${prev.model} → ${selectedModel}; active chat kept running`,
+      });
     }
-    prevModelRef.current = selectedModel;
-  }, [selectedModel, streamState.isStreaming, resetStream, cancelActiveChat]);
+    prevSelectionRef.current = { model: selectedModel, epoch: modelSelectionEpoch };
+  }, [selectedModel, modelSelectionEpoch, streamState.isStreaming, resetStream, cancelActiveChat]);
 
   const micDisabled = !speechEnabled || !speechAvailable || streamState.isStreaming;
   const micReason: 'not-enabled' | 'no-backend' | 'streaming' | undefined =
@@ -195,7 +213,7 @@ export function InputArea() {
     const last = allMessages[allMessages.length - 1];
     if (last?.role === 'assistant') useTtsStore.getState().markAutoSpoken(last.id);
     useTtsStore.getState().stop();
-    cancelActiveChat();
+    cancelActiveChat('stop-button');
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -495,16 +513,20 @@ export function InputArea() {
       }
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        // User cancelled or model switch — keep whatever was accumulated
+      if (err?.name === 'AbortError' && cancellationReasons.current.has(controller)) {
+        // Show "Generation stopped" only for a deliberate Stop or model pick.
         if (!accumulatedContent) accumulatedContent = '(Generation stopped)';
       } else {
         const errMsg = err?.message || String(err);
-        accumulatedContent =
-          accumulatedContent || `Error: ${errMsg}`;
+        const unexpectedAbort = err?.name === 'AbortError';
+        accumulatedContent = accumulatedContent || (unexpectedAbort
+          ? 'Error: Chat connection was interrupted unexpectedly. Check Logs for details.'
+          : `Error: ${errMsg}`);
         useAppStore.getState().addLogEntry({
           timestamp: Date.now(), level: 'error', category: 'chat',
-          message: `Stream error: ${errMsg}`,
+          message: unexpectedAbort
+            ? `Unexpected AbortError without Stop: model=${selectedModel}, aborted=${controller.signal.aborted}, requestId=${chatRequestId ?? 'none'}`
+            : `Stream error: ${errMsg}`,
         });
       }
       // If we tore out mid-research, make sure the live System panel
