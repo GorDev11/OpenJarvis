@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldSearchConnectedData } from './connected-source-routing';
+import { shouldSearchConnectedData, shouldUseIndexedResearch, shouldUseLiveWebTools } from './connected-source-routing';
 
 describe('connected-source query routing', () => {
   it('searches indexed Gmail data for a personal Armenian request', () => {
@@ -23,5 +23,30 @@ describe('connected-source query routing', () => {
     expect(shouldSearchConnectedData('Send an email from my Gmail')).toBe(false);
     expect(shouldSearchConnectedData('Ջնջիր իմ Gmail-ի նամակները')).toBe(false);
     expect(shouldSearchConnectedData('Отправь письмо с моей почты')).toBe(false);
+  });
+});
+
+describe('external web versus indexed personal research', () => {
+  it('uses live Browser tools for the exact Armenian YouTube request even if research is on', () => {
+    const request = 'Օգտագործիր Browser գործիքը, բացիր https://www.youtube.com/watch?v=jA5Snm8mLgk և ասա՝ ինչի մասին է';
+    expect(shouldUseLiveWebTools(request)).toBe(true);
+    expect(shouldUseIndexedResearch(request, true)).toBe(false);
+  });
+
+  it('uses live tools when asked to open a public page', () => {
+    expect(shouldUseIndexedResearch('Open https://example.com in Browser', true)).toBe(false);
+    expect(shouldUseIndexedResearch('Summarize https://example.com', true)).toBe(false);
+  });
+
+  it('preserves personal Gmail searches including links appearing in email', () => {
+    const query = 'Գտիր իմ Gmail-ի նամակը, որտեղ կա https://youtube.com/watch?v=xyz';
+    expect(shouldUseIndexedResearch(query, true)).toBe(true);
+    expect(shouldUseLiveWebTools(query)).toBe(false);
+  });
+
+  it('keeps research selected for indexed searches without external links', () => {
+    expect(shouldUseIndexedResearch('Գտիր իմ վերջին նամակները', false)).toBe(true);
+    expect(shouldUseIndexedResearch('Summary of my notes', true)).toBe(true);
+    expect(shouldUseIndexedResearch('What does this mean?', false)).toBe(false);
   });
 });

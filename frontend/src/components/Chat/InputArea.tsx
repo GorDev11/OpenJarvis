@@ -7,7 +7,7 @@ import { streamChat, streamResearch } from '../../lib/sse';
 import { fetchSavings, getBase } from '../../lib/api';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
 import { serializeToolCallArguments } from '../../lib/tool-call';
-import { shouldSearchConnectedData } from '../../lib/connected-source-routing';
+import { shouldUseIndexedResearch, shouldUseLiveWebTools } from '../../lib/connected-source-routing';
 import {
   engineFromCompletionChunk,
   resolveChatEngine,
@@ -187,7 +187,10 @@ export function InputArea() {
   const sendMessage = useCallback(async () => {
     const content = input.trim();
     if (!content || streamState.isStreaming) return;
-    const useResearch = deepResearch || shouldSearchConnectedData(content);
+    const useResearch = shouldUseIndexedResearch(content, deepResearch);
+    if (deepResearch && shouldUseLiveWebTools(content)) {
+      toast.info('Using Browser tools for this external link. Deep Research searches indexed personal data only.');
+    }
     if (!selectedModel) {
       toast.error('Pick a model first (⌘K)');
       return;
@@ -592,12 +595,17 @@ export function InputArea() {
               border: `1px solid ${deepResearch ? 'var(--color-accent)' : 'var(--color-border)'}`,
               color: deepResearch ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
             }}
-            title={deepResearch ? 'Deep Research: on' : 'Deep Research: off'}
+            title={deepResearch ? 'Indexed personal data research: on. Public URLs open with Chat tools.' : 'Research your indexed Gmail and other personal data'}
           >
             <Search size={12} />
             Deep Research
           </button>
         </div>
+        {deepResearch && (
+          <div className="text-[11px] leading-snug" style={{ color: 'var(--color-text-tertiary)' }}>
+            Deep Research searches connected personal data. External URLs use Chat tools.
+          </div>
+        )}
         {deepResearch && corpusSync.syncing && corpusSync.itemsSynced > 0 && (
           <div
             className="text-[11px] leading-snug"
