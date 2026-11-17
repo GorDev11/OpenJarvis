@@ -1294,7 +1294,12 @@ def include_all_routes(app) -> None:
         router as approval_router,  # noqa: PLC0415
     )
 
+    from openjarvis.server.chat_permission_routes import (
+        router as chat_permission_router,
+    )
+
     app.include_router(approval_router)
+    app.include_router(chat_permission_router)
     app.include_router(agents_router)
     app.include_router(memory_router)
     app.include_router(traces_router)

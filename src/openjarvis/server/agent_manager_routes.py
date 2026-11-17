@@ -20,7 +20,7 @@ from openjarvis.agents.tool_resolver import (
 from openjarvis.agents.tool_resolver import (
     ensure_registries_populated as _ensure_registries_populated,
 )
-from openjarvis.security.confirmation import desktop_tool_confirmation
+from openjarvis.security.chat_permissions import chat_tool_confirmation
 from openjarvis.server.model_capabilities import is_embed_only_model
 
 try:
@@ -1030,7 +1030,7 @@ async def _stream_managed_agent(
                     max_turns=int(config.get("max_turns", 8)),
                     temperature=float(config.get("temperature", 0.3)),
                     interactive=True,
-                    confirm_callback=desktop_tool_confirmation,
+                    confirm_callback=chat_tool_confirmation,
                 )
                 if resolved_toolkit.mcp_clients:
                     dr_agent._mcp_clients = resolved_toolkit.mcp_clients
@@ -1319,7 +1319,7 @@ async def _stream_managed_agent(
         tools=resolved_toolkit.instances,
         bus=bus,
         interactive=True,
-        confirm_callback=desktop_tool_confirmation,
+        confirm_callback=chat_tool_confirmation,
         capability_policy=getattr(app_state, "capability_policy", None),
         rate_limiter=getattr(app_state, "rate_limiter", None),
         agent_id=agent_id,
@@ -1522,12 +1522,13 @@ async def _stream_managed_agent(
 
                     try:
                         if tool_name in resolved_by_name:
-                            result = stream_tool_executor.execute(
+                            result = await asyncio.to_thread(
+                                stream_tool_executor.execute,
                                 MsgToolCall(
                                     id=tc["id"],
                                     name=tool_name,
                                     arguments=tool_args,
-                                )
+                                ),
                             )
                             tool_result_content = result.content
                             tool_succeeded = bool(result.success)
@@ -1890,7 +1891,7 @@ def create_agent_manager_router(
                                     ),
                                     agent_id=agent_id,
                                     interactive=True,
-                                    confirm_callback=desktop_tool_confirmation,
+                                    confirm_callback=chat_tool_confirmation,
                                 )
 
                                 def handler(text: str) -> str:
@@ -1973,7 +1974,7 @@ def create_agent_manager_router(
                                     ),
                                     agent_id=agent_id,
                                     interactive=True,
-                                    confirm_callback=desktop_tool_confirmation,
+                                    confirm_callback=chat_tool_confirmation,
                                 )
                         bus = getattr(request.app.state, "bus", None)
                         if bus is None:
@@ -2145,7 +2146,7 @@ def create_agent_manager_router(
                         trace_store=_ts2,
                     )
 
-                    executor._confirm_callback = desktop_tool_confirmation
+                    executor._confirm_callback = chat_tool_confirmation
                     system = _make_lightweight_system(
                         _srv_engine,
                         _srv_model,

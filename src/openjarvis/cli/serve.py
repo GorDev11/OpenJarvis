@@ -386,16 +386,16 @@ def serve(
 
                     if tools:
                         agent_kwargs["tools"] = tools
-                    from openjarvis.security.confirmation import (
-                        desktop_tool_confirmation,
-                        is_desktop_runtime,
+                    from openjarvis.security.chat_permissions import (
+                        chat_tool_confirmation,
                     )
+                    from openjarvis.security.confirmation import is_desktop_runtime
 
                     if is_desktop_runtime():
-                        # Sensitive tools (notably shell_exec) remain behind a
-                        # fresh native Yes/No decision for every invocation.
+                        # Interactive approvals are resolved in the Chat view.
+                        # The backend remains fail-closed if the UI disconnects.
                         agent_kwargs["interactive"] = True
-                        agent_kwargs["confirm_callback"] = desktop_tool_confirmation
+                        agent_kwargs["confirm_callback"] = chat_tool_confirmation
                     # Reuse these for the scheduler's ToolExecutor (#263).
                     resolved_tools = tools
 

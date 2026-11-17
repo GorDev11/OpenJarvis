@@ -397,8 +397,16 @@ class ToolExecutor:
         if isinstance(params, dict):
             params.pop("_taint", None)
 
-        # Confirmation check for sensitive tools
-        if tool.spec.requires_confirmation:
+        # In the trusted Desktop app, a permission profile governs each tool.
+        # Autonomous mode permits only reviewed read-only tools. All writers,
+        # shell commands and unknown integrations still require an explicit
+        # fresh approval. Guided mode asks for every tool call.
+        from openjarvis.security.chat_permissions import requires_chat_approval
+
+        approval_required = requires_chat_approval(
+            tool_call.name, tool.spec.requires_confirmation
+        )
+        if approval_required:
             if not self._interactive or self._confirm_callback is None:
                 return ToolResult(
                     tool_name=tool_call.name,
