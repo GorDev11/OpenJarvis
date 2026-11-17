@@ -26,6 +26,37 @@ pub(crate) struct ColibriStatus {
     message: String,
     error: Option<String>,
     log_tail: String,
+    /// Backend selected by the official Colibri setup (not a GPU-utilization measurement).
+    backend: Option<String>,
+}
+
+/// Read the official Colibri setup file, without changing any upstream configuration.
+/// Colibri stores this separately from the OpenJarvis-managed source checkout.
+fn official_colibri_backend() -> Option<String> {
+    let dir = if let Some(explicit) = std::env::var_os("COLI_SETUP_HOME") {
+        PathBuf::from(explicit)
+    } else {
+        #[cfg(target_os = "windows")]
+        {
+            std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(super::home_dir()).join("AppData/Local"))
+                .join("colibri")
+        }
+        #[cfg(target_os = "macos")]
+        {
+            PathBuf::from(super::home_dir()).join("Library/Application Support/colibri")
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            std::env::var_os("XDG_DATA_HOME").map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(super::home_dir()).join(".local/share"))
+                .join("colibri")
+        }
+    };
+    let raw = std::fs::read_to_string(dir.join("setup.json")).ok()?;
+    let data: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let backend = data.get("backend")?.as_str()?.to_ascii_lowercase();
+    matches!(backend.as_str(), "cuda" | "vulkan" | "cpu").then_some(backend)
 }
 
 fn data_dir() -> PathBuf {
@@ -107,8 +138,9 @@ pub(crate) async fn colibri_status(state: State<'_, ColibriSetupState>)
     drop(process);
     let model = probe_model().await.ok();
     let ready = model.is_some();
+    let backend = official_colibri_backend();
     Ok(ColibriStatus {
-        ready, installing, model, error, log_tail: log_tail(),
+        ready, installing, model, error, log_tail: log_tail(), backend,
         message: if ready { "Colibri Qwen3.6 ready".into() }
         else if installing { "Installing Qwen3.6-35B-A3B (23 GB, resumable)".into() }
         else { "Colibri is not running".into() },
