@@ -92,8 +92,22 @@ jobs:
           # Tauri v2 createUpdaterArtifacts=true signs the NSIS .exe itself.
           $installer = Get-ChildItem $dir -Filter '*.exe' -File | Select-Object -First 1
           if (-not $installer) { throw "Missing NSIS installer" }
+          # Tauri emits "OpenJarvis Armenian Preview_...exe" while GitHub
+          # release upload normalizes spaces to dots. Previously latest.json
+          # pointed at %20-separated names and the updater always got HTTP 404.
+          # Name the local payload and its detached signature exactly as they
+          # will appear in the release BEFORE constructing the signed manifest.
+          $safeName = $installer.Name -replace ' ', '.'
+          if ($safeName -ne $installer.Name) {
+            $signatureOriginal = "$($installer.FullName).sig"
+            if (-not (Test-Path -LiteralPath $signatureOriginal)) { throw "Missing installer signature" }
+            Rename-Item -LiteralPath $signatureOriginal -NewName "$safeName.sig"
+            Rename-Item -LiteralPath $installer.FullName -NewName $safeName
+            $installer = Get-Item -LiteralPath (Join-Path $dir $safeName)
+          }
+          if ($installer.Name -match '\s') { throw "Installer filename still contains whitespace" }
           $signatureFile = "$($installer.FullName).sig"
-          if (-not (Test-Path $signatureFile)) { throw "Missing installer signature" }
+          if (-not (Test-Path -LiteralPath $signatureFile)) { throw "Missing installer signature" }
           $signature = (Get-Content $signatureFile -Raw).Trim()
           if (-not $signature) { throw "Empty signature" }
           $asset = [Uri]::EscapeDataString($installer.Name)
@@ -119,6 +133,7 @@ jobs:
           $installers = @(Get-ChildItem $dir -Filter "*.exe" -File)
           if ($installers.Count -ne 1) { throw "Expected exactly one NSIS installer" }
           $exe = $installers[0]
+          if ($exe.Name -match '\s') { throw "Installer filename is not GitHub release safe" }
           $signatureFile = "$($exe.FullName).sig"
           if (-not (Test-Path $signatureFile)) { throw "Unsigned NSIS executable" }
           $manifest = Get-Content "$dir/latest.json" -Raw | ConvertFrom-Json
@@ -143,5 +158,23 @@ jobs:
           installer="${installers[0]}"
           if [ ! -f "$installer.sig" ]; then echo "::error::Missing updater signature"; exit 1; fi
           gh release upload "$RELEASE_TAG" "$installer" "$installer.sig" --repo "$GITHUB_REPOSITORY" --clobber
-          # Latest manifest is uploaded last to avoid broken asset references.
+          # The Release API must list exactly the filename in latest.json.
+          # GitHub silently rewrites whitespace in asset names, so a normal
+          # upload succeeding does NOT prove that the updater URL will work.
+          uploaded_name="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            --jq '.assets[] | select(.name == "'"$(basename "$installer")"'") | .name')"
+          if [ "$uploaded_name" != "$(basename "$installer")" ]; then
+            echo "::error::Release asset filename differs from latest.json"; exit 1
+          fi
+          # Verify the public, unauthenticated download and its exact bytes.
+          # If GitHub returns a 404 or corrupt payload, keep the previous
+          # latest.json rather than advertising a broken signed update.
+          download_url="$(python -c 'import json,sys; p=json.load(open(sys.argv[1],encoding="utf-8-sig")); print(p["platforms"]["windows-x86_64"]["url"])' "$dir/latest.json")"
+          curl --fail --location --retry 6 --retry-all-errors --retry-delay 3 \
+            --silent --show-error --output "$RUNNER_TEMP/openjarvis-update-public.exe" "$download_url"
+          if ! cmp -s "$installer" "$RUNNER_TEMP/openjarvis-update-public.exe"; then
+            echo "::error::Public updater download differs from signed installer"; exit 1
+          fi
+          # The manifest is published LAST, only after the payload is proven
+          # reachable and byte-identical. Tauri verifies its signature on install.
           gh release upload "$RELEASE_TAG" "$dir/latest.json" --repo "$GITHUB_REPOSITORY" --clobber
