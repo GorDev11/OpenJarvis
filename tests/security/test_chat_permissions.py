@@ -19,7 +19,9 @@ def test_request_resumes_exact_call_after_yes(monkeypatch) -> None:
     broker = permissions.ChatPermissionBroker()
     outcomes: list[bool] = []
     thread = threading.Thread(
-        target=lambda: outcomes.append(broker.request("Allow execution of tool 'shell_exec'?", 2))
+        target=lambda: outcomes.append(
+            broker.request("Allow execution of tool 'shell_exec'?", 2)
+        )
     )
     thread.start()
     try:

@@ -13,8 +13,6 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-
 from openjarvis.core.paths import get_config_dir
 from openjarvis.security.confirmation import is_desktop_runtime
 
@@ -118,7 +116,11 @@ class ChatPermissionBroker:
 
     def pending(self) -> list[dict[str, str]]:
         with self._lock:
-            return [req.public() for req in self._pending.values() if not req.event.is_set()]
+            return [
+                req.public()
+                for req in self._pending.values()
+                if not req.event.is_set()
+            ]
 
     def decide(self, request_id: str, allow: bool) -> bool:
         with self._lock:
