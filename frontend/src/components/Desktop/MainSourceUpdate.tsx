@@ -259,7 +259,13 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
     const timer = window.setInterval(() => {
       if (updating.current || Date.now() - lastActivity < 60_000) return;
       // Avoid closing the app while the user is editing an unsent message.
-      if (document.querySelector('textarea:focus, input:focus, [contenteditable="true"]:focus')) return;
+      const focused = document.activeElement as HTMLInputElement | null;
+      if (focused?.matches('textarea, input, [contenteditable="true"]')) {
+        const unsent = 'value' in focused && typeof focused.value === 'string'
+          ? focused.value.trim()
+          : focused.textContent?.trim();
+        if (unsent) return;
+      }
       void update();
     }, 5000);
     return () => {

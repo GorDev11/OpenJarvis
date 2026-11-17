@@ -76,6 +76,8 @@ jobs:
           $config["bundle"]["createUpdaterArtifacts"] = $true
           $config["build"]["beforeBuildCommand"] = "npm run build:tauri:armenian-release"
           $config["plugins"]["updater"]["pubkey"] = $env:TAURI_PUBLIC_KEY
+          $config["plugins"]["updater"]["requireSignedVersion"] = $true
+          $config["plugins"]["updater"]["windows"] = @{ installMode = "passive" }
           $config["plugins"]["updater"]["endpoints"] = @("https://github.com/GorDev11/OpenJarvis/releases/download/desktop-main/latest.json")
           $config | ConvertTo-Json -Depth 30 | Set-Content "frontend/src-tauri/tauri.main-signed.generated.json" -Encoding utf8
       - name: Build signed NSIS updater
@@ -108,6 +110,25 @@ jobs:
             }
           }
           $manifest | ConvertTo-Json -Depth 10 | Set-Content "$dir/latest.json" -Encoding utf8
+      - name: Verify manifest and signed updater payload
+        shell: pwsh
+        env:
+          BUILD_VERSION: 1.1.${{ github.run_number }}
+        run: |
+          $dir = "frontend/src-tauri/target/release/bundle/nsis"
+          $installers = @(Get-ChildItem $dir -Filter "*.exe" -File)
+          if ($installers.Count -ne 1) { throw "Expected exactly one NSIS installer" }
+          $exe = $installers[0]
+          $signatureFile = "$($exe.FullName).sig"
+          if (-not (Test-Path $signatureFile)) { throw "Unsigned NSIS executable" }
+          $manifest = Get-Content "$dir/latest.json" -Raw | ConvertFrom-Json
+          if ($manifest.version -ne $env:BUILD_VERSION) { throw "Manifest version mismatch" }
+          $entry = $manifest.platforms.'windows-x86_64'
+          if (-not $entry) { throw "Missing windows-x86_64 target" }
+          if ($entry.signature -ne (Get-Content $signatureFile -Raw).Trim()) { throw "Signature mismatch" }
+          $expectedUrl = "https://github.com/GorDev11/OpenJarvis/releases/download/desktop-main/$([Uri]::EscapeDataString($exe.Name))"
+          if ($entry.url -ne $expectedUrl) { throw "Updater asset URL mismatch" }
+          Write-Host "Signed update manifest validated for $env:BUILD_VERSION"
       - name: Publish owner-signed rolling release
         shell: bash
         run: |
