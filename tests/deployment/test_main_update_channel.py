@@ -64,12 +64,12 @@ def test_unified_update_card_downloads_signed_binary_then_syncs_backend() -> Non
     assert "await release.download(" in handler
     assert "'check_main_update'" in handler
     assert "'apply_main_update'" in handler
-    assert "await release.install()" in handler
+    assert "await release.install({ restartAfterInstall: true })" in handler
     assert (
         handler.index("await release.download(")
         < handler.index("'check_main_update'")
         < handler.index("'apply_main_update'")
-        < handler.index("await release.install()")
+        < handler.index("await release.install({ restartAfterInstall: true })")
     )
     assert "event.event === 'Started'" in handler
     assert "event.data?.contentLength" in handler
@@ -85,7 +85,7 @@ def test_only_one_visible_update_card_and_preview_cannot_install_binary() -> Non
     assert "export function UpdateChecker()" not in preferences
     assert "isUpdaterBuildDisabled()" in widget
     assert "const release = signedUpdate.current" in widget
-    assert "await release.install()" in widget
+    assert "await release.install({ restartAfterInstall: true })" in widget
     assert "CHECK_SIGNED_EVERY_MS = 60 * 1000" in widget
 
 
@@ -145,4 +145,39 @@ def test_expected_backend_restart_hides_only_transient_connection_error() -> Non
     assert "detail: 'updating'" in widget
     assert "detail: 'waiting'" in widget
     assert "Backend-ը վերագործարկվում է" in widget
-    assert "Թարմացնել / Update" in widget
+    assert "Թարմացնել ամբողջ ծրագիրը" in widget
+    assert "Թարմացնել միայն Backend-ը" in widget
+
+
+def test_signed_bootstrap_is_explicit_and_reuses_owner_keys() -> None:
+    script = (ROOT / "scripts" / "enable-desktop-auto-updates.ps1").read_text(
+        encoding="utf-8"
+    )
+    installer = (ROOT / "scripts" / "enable-desktop-auto-updates.cmd").read_text(
+        encoding="utf-8"
+    )
+    assert "gh auth login" in script
+    assert "TAURI_SIGNING_PRIVATE_KEY" in script
+    assert "TAURI_SIGNING_PUBLIC_KEY" in script
+    assert "if (-not (Test-Path $keyPath))" in script
+    assert "gh workflow run main-desktop-signed.yml" in script
+    assert "enable-desktop-auto-updates.ps1" in installer
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "Verify manifest and signed updater payload" in workflow
+    assert '"requireSignedVersion"' in workflow
+    assert 'installMode = "passive"' in workflow
+
+
+def test_signed_auto_install_requires_opt_in_and_stays_idle_safe() -> None:
+    preferences = (FRONTEND / "UpdateChecker.tsx").read_text(encoding="utf-8")
+    widget = (FRONTEND / "MainSourceUpdate.tsx").read_text(encoding="utf-8")
+    settings = (
+        ROOT / "frontend" / "src" / "pages" / "SettingsPage.tsx"
+    ).read_text(encoding="utf-8")
+    assert "return localStorage.getItem(AUTO_INSTALL_KEY) !== '1'" in preferences
+    assert "60_000" in widget
+    assert "isStreaming" in widget
+    assert "openjarvis-auto-install-setting-changed" in widget
+    assert "window.confirm(" in settings
+    assert "Activate signed updates (once)" in settings
+    assert "launch_signed_update_setup" in settings
