@@ -408,6 +408,13 @@ class LMStudioEngineConfig:
 
 
 @dataclass(slots=True)
+class ColibriEngineConfig:
+    """Colibri OpenAI-compatible local inference (separate from Jarvis API)."""
+
+    host: str = "http://127.0.0.1:19000"
+
+
+@dataclass(slots=True)
 class ExoEngineConfig:
     """Per-engine config for Exo."""
 
@@ -484,6 +491,7 @@ class EngineConfig:
     llamacpp: LlamaCppEngineConfig = field(default_factory=LlamaCppEngineConfig)
     mlx: MLXEngineConfig = field(default_factory=MLXEngineConfig)
     lmstudio: LMStudioEngineConfig = field(default_factory=LMStudioEngineConfig)
+    colibri: ColibriEngineConfig = field(default_factory=ColibriEngineConfig)
     exo: ExoEngineConfig = field(default_factory=ExoEngineConfig)
     nexa: NexaEngineConfig = field(default_factory=NexaEngineConfig)
     uzu: UzuEngineConfig = field(default_factory=UzuEngineConfig)
@@ -2257,6 +2265,9 @@ host = "http://localhost:8080"
 
 # [engine.lmstudio]
 # host = "http://localhost:1234"
+
+# [engine.colibri]
+# host = "http://127.0.0.1:19000"
 
 # [engine.exo]
 # host = "http://localhost:52415"

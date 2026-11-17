@@ -102,7 +102,10 @@ class _OpenAICompatibleEngine(AsyncHTTPEngineMixin, InferenceEngine):
         try:
             url = f"{self._api_prefix}/chat/completions"
             resp = self._client.post(url, json=payload)
-            if resp.status_code == 400 and "tools" in payload:
+            if resp.status_code == 400 and "tools" in payload and self.engine_id != "colibri":
+                # Other compatible servers retain their legacy fallback. Colibri
+                # promises tool calling: never hide its tool-API failures by
+                # silently retrying without the user's requested capabilities.
                 payload.pop("tools", None)
                 payload.pop("tool_choice", None)
                 resp = self._client.post(url, json=payload)
