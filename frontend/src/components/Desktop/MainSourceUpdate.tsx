@@ -94,13 +94,29 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
   // The signed channel is checked independently from the main Git ref;
   // CI may still be building when a new source commit is first detected.
   const checkDesktop = useCallback(async () => {
-    if (!isTauri() || isUpdaterBuildDisabled() || isAutoUpdateDisabled() ||
+    // Checks continue even when automatic installation is disabled: the user
+    // can still choose a one-click manual update in the banner.
+    if (!isTauri() || isUpdaterBuildDisabled() ||
         updating.current || checkingSigned.current) return;
     checkingSigned.current = true;
     try {
       const { check } = await import('@tauri-apps/plugin-updater');
       const release = await check({ timeout: 30000 });
-      if (!release) return;
+      if (!release) {
+        if (signedUpdate.current) {
+          try { await signedUpdate.current.close(); } catch { /* already closed */ }
+          signedUpdate.current = null;
+          setDesktopVersion('');
+        }
+        return;
+      }
+      if (signedUpdate.current?.version === release.version) {
+        try { await release.close(); } catch { /* already closed */ }
+        return;
+      }
+      if (signedUpdate.current) {
+        try { await signedUpdate.current.close(); } catch { /* already closed */ }
+      }
       signedUpdate.current = release;
       setDesktopVersion(release.version);
       setPhase(prev => prev === 'updating' || prev === 'restarting' ? prev : 'available');
@@ -191,11 +207,12 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
           }
           window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'updating' }));
           await invoke('apply_main_update', { expectedSha: source.latest_sha });
-          window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'waiting' }));
+          // Do not restart the Python backend only to immediately shut down
+          // the Desktop for the signed installer.
         }
         setPhase('installing');
-        await release.install();
-        // Windows exits during the installer; on other platforms report completion.
+        await release.install({ restartAfterInstall: true });
+        // Windows normally exits during installation and relaunches the app.
         setPhase('updated');
       } catch (e) {
         setError(String(e));
@@ -227,6 +244,30 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
       window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'waiting' }));
     }
   }, [status, isStreaming]);
+
+  // Owner opt-in: install an available, signature-verified Desktop release
+  // only after one minute without keyboard/pointer activity, and never while
+  // a chat response streams. No unsigned Preview can enter this path.
+  useEffect(() => {
+    if (compact || !isTauri() || isUpdaterBuildDisabled() ||
+        isAutoUpdateDisabled() || !desktopVersion || phase !== 'available' ||
+        isStreaming) return;
+    let lastActivity = Date.now();
+    const activity = () => { lastActivity = Date.now(); };
+    window.addEventListener('keydown', activity);
+    window.addEventListener('pointerdown', activity);
+    const timer = window.setInterval(() => {
+      if (updating.current || Date.now() - lastActivity < 60_000) return;
+      // Avoid closing the app while the user is editing an unsent message.
+      if (document.querySelector('textarea:focus, input:focus, [contenteditable="true"]:focus')) return;
+      void update();
+    }, 5000);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('keydown', activity);
+      window.removeEventListener('pointerdown', activity);
+    };
+  }, [compact, desktopVersion, phase, isStreaming, update]);
 
   if (!isTauri()) return null;
 
@@ -332,7 +373,7 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
               <button type="button" onClick={() => void update()} disabled={(!desktopVersion && !status?.can_update) || isStreaming}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                 style={{ background: 'var(--color-accent)', color: 'white' }}>
-                <Download size={13} /> Թարմացնել / Update
+                <Download size={13} /> {desktopVersion ? 'Թարմացնել ամբողջ ծրագիրը' : 'Թարմացնել միայն Backend-ը'}
               </button>
               {!desktopVersion && status && !status.can_update && (
                 <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>

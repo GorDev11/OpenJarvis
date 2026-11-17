@@ -311,6 +311,13 @@ export function SettingsPage() {
   const [updateCheckState, setUpdateCheckState] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
 
   const handleAutoUpdateToggle = useCallback((enabled: boolean) => {
+    // Turning this on permits Windows to install a verified update and
+    // relaunch the app after inactivity. Ask once; never silently opt in.
+    if (enabled && !window.confirm(
+      'Enable automatic installation of signed Desktop updates? ' +
+      'OpenJarvis may restart after at least one minute without activity. ' +
+      'Unsaved work in other applications is not affected.'
+    )) return;
     setAutoUpdateEnabled(enabled);
     setAutoUpdateDisabled(!enabled);
   }, []);
@@ -962,16 +969,18 @@ export function SettingsPage() {
               <MainSourceUpdate compact />
             </SettingRow>
             <SettingRow
-              label="Auto-update"
+              label="Automatically install Desktop updates"
               description={updaterBuildDisabled
-                ? 'A one-time signed Desktop installation is required to activate .exe self-updates'
-                : 'Automatically check signed Desktop releases every minute'}
+                ? 'Requires first owner-signed Desktop installation once; Preview cannot auto-replace its .exe'
+                : 'Opt in to install signed updates after 60 seconds idle; normal checks run even when off'}
             >
               <button
                 onClick={() => handleAutoUpdateToggle(!autoUpdateEnabled)}
                 className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
                 style={{ background: autoUpdateEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)' }}
                 disabled={updaterBuildDisabled}
+                aria-label="Automatically install signed Desktop updates while idle"
+                aria-pressed={autoUpdateEnabled}
               >
                 <span
                   className="inline-block h-3.5 w-3.5 rounded-full transition-transform"

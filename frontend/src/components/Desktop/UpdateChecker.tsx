@@ -1,7 +1,7 @@
-// Preferences shared with the unified source + signed Desktop updater.
-// Only signed Tauri release builds can install binary updates; Preview
-// installers always use VITE_OPENJARVIS_NO_UPDATER=1.
-const DISABLED_KEY = 'oj-auto-update-disabled';
+// Preferences for verified owner-signed Desktop updates. The unsigned
+// Preview cannot update its compiled executable because it has no trusted key.
+// Automatic installation is explicit opt-in and never silently enabled.
+const AUTO_INSTALL_KEY = 'oj-signed-desktop-auto-install-enabled';
 
 export function isUpdaterBuildDisabled(): boolean {
   const value = (import.meta as any).env?.VITE_OPENJARVIS_NO_UPDATER;
@@ -10,15 +10,14 @@ export function isUpdaterBuildDisabled(): boolean {
 
 export function isAutoUpdateDisabled(): boolean {
   try {
-    return localStorage.getItem(DISABLED_KEY) === '1';
+    return localStorage.getItem(AUTO_INSTALL_KEY) !== '1';
   } catch {
-    return false;
+    return true;
   }
 }
 
 export function setAutoUpdateDisabled(disabled: boolean): void {
   try {
-    if (disabled) localStorage.setItem(DISABLED_KEY, '1');
-    else localStorage.removeItem(DISABLED_KEY);
-  } catch { /* Settings remains usable without local storage. */ }
+    localStorage.setItem(AUTO_INSTALL_KEY, disabled ? '0' : '1');
+  } catch { /* No automatic installations if storage is unavailable. */ }
 }
