@@ -361,7 +361,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 bus=getattr(request.app.state, "bus", None),
                 memory_service=getattr(request.app.state, "memory_service", None),
                 request_id=request_id,
-                cancellation_registry=getattr(request.app.state, "chat_cancellations", None),
+                cancellation_registry=getattr(
+                    request.app.state, "chat_cancellations", None
+                ),
             )
         return await _handle_stream(
             engine,

@@ -10,7 +10,7 @@ describe('streamChat SSE framing', () => {
   it('adds request ID and calls the separate cancellation endpoint', async () => {
     const requestId = '5ec5c546-f2b3-4fc4-b9bd-ab2d01437df4';
     const fakeFetch = vi.fn()
-      .mockResolvedValueOnce(new Response('data: [DONE]\\n\\n', { status: 200 }))
+      .mockResolvedValueOnce(new Response('data: [DONE]\n\n', { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'cancelling' }), { status: 200 }));
     vi.stubGlobal('fetch', fakeFetch);
 
