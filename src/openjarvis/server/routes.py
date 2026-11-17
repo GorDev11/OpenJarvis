@@ -33,6 +33,57 @@ from openjarvis.server.models import (
 router = APIRouter()
 
 
+class ChatCancellationRegistry:
+    """Per-application request registry for explicit desktop stream cancellation.
+
+    A cancellation acknowledgement signals the agent; Colibri's prefill may
+    still need time to release its single engine slot.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._active: dict[str, Any] = {}
+
+    def register(self, request_id: str, bridge: Any) -> bool:
+        with self._lock:
+            if request_id in self._active:
+                return False
+            self._active[request_id] = bridge
+            return True
+
+    def cancel(self, request_id: str) -> bool:
+        with self._lock:
+            bridge = self._active.get(request_id)
+        if bridge is None:
+            return False
+        bridge.cancel()
+        return True
+
+    def unregister(self, request_id: str, bridge: Any) -> None:
+        with self._lock:
+            if self._active.get(request_id) is bridge:
+                del self._active[request_id]
+
+
+def _valid_chat_request_id(value: str) -> bool:
+    try:
+        return str(uuid.UUID(value)) == value
+    except (ValueError, AttributeError):
+        return False
+
+
+@router.post("/v1/chat/cancel/{request_id}")
+async def cancel_chat_completion(request_id: str, request: Request):
+    """Signal cancellation even if a browser SSE disconnect stalls."""
+    if not _valid_chat_request_id(request_id):
+        raise HTTPException(status_code=400, detail="Invalid chat request ID")
+    registry = getattr(request.app.state, "chat_cancellations", None)
+    if registry is not None and registry.cancel(request_id):
+        return {"status": "cancelling"}
+    return {"status": "not_found"}
+
+
+
 def _to_messages(chat_messages) -> list[Message]:
     """Convert Pydantic ChatMessage objects to core Message objects."""
     messages = []
@@ -161,6 +212,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     engine = request.app.state.engine
     agent = getattr(request.app.state, "agent", None)
     model = request_body.model
+    request_id = request.headers.get("x-openjarvis-request-id")
+    if request_id and not _valid_chat_request_id(request_id):
+        raise HTTPException(status_code=400, detail="Invalid chat request ID")
     use_server_agent = (
         agent is not None
         and not request_body.tools
@@ -306,6 +360,8 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 trace_store=getattr(request.app.state, "trace_store", None),
                 bus=getattr(request.app.state, "bus", None),
                 memory_service=getattr(request.app.state, "memory_service", None),
+                request_id=request_id,
+                cancellation_registry=getattr(request.app.state, "chat_cancellations", None),
             )
         return await _handle_stream(
             engine,
@@ -710,6 +766,8 @@ async def _handle_agent_stream(
     trace_store=None,
     bus=None,
     memory_service=None,
+    request_id: str | None = None,
+    cancellation_registry: ChatCancellationRegistry | None = None,
 ):
     """Run the configured agent through the live EventBus-to-SSE bridge."""
     query_text = ""
@@ -754,8 +812,20 @@ async def _handle_agent_stream(
         complexity_info=complexity_info,
         on_complete=_on_complete,
     )
+    if request_id and cancellation_registry is not None:
+        if not cancellation_registry.register(request_id, bridge):
+            raise HTTPException(status_code=409, detail="Duplicate chat request ID")
+
+    async def _stream_with_cleanup():
+        try:
+            async for chunk in bridge.stream():
+                yield chunk
+        finally:
+            if request_id and cancellation_registry is not None:
+                cancellation_registry.unregister(request_id, bridge)
+
     return StreamingResponse(
-        bridge.stream(),
+        _stream_with_cleanup(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )

@@ -12,11 +12,15 @@ export interface ChatRequest {
 export async function* streamChat(
   request: ChatRequest,
   signal?: AbortSignal,
+  requestId?: string,
 ): AsyncGenerator<SSEEvent> {
   const base = getBase();
   const response = await fetch(`${base}/v1/chat/completions`, {
     method: 'POST',
-    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    headers: authHeaders({
+      'Content-Type': 'application/json',
+      ...(requestId ? { 'X-OpenJarvis-Request-ID': requestId } : {}),
+    }),
     body: JSON.stringify(request),
     signal,
   });
@@ -32,6 +36,10 @@ export async function* streamChat(
   // event outside the read loop so `event:` in one chunk still applies to a
   // `data:` line received in the next chunk.
   let currentEvent: string | undefined;
+  // Abort must release a pending reader, not only dismiss the chat spinner.
+  const onAbort = () => { void reader.cancel().catch(() => {}); };
+  signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal?.aborted) onAbort();
 
   try {
     while (true) {
@@ -56,7 +64,28 @@ export async function* streamChat(
       }
     }
   } finally {
+    signal?.removeEventListener('abort', onAbort);
+    if (signal?.aborted) {
+      try { await reader.cancel(); } catch { /* already closed */ }
+    }
     reader.releaseLock();
+  }
+}
+
+/** Cancel the server-side agent independently of the aborted SSE connection. */
+export async function cancelChat(requestId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${getBase()}/v1/chat/cancel/${encodeURIComponent(requestId)}`, {
+      method: 'POST',
+      headers: authHeaders(),
+      signal: AbortSignal.timeout(4000),
+      keepalive: true,
+    });
+    if (!response.ok) return false;
+    const result = await response.json() as { status?: string };
+    return result.status === 'cancelling';
+  } catch {
+    return false;
   }
 }
 

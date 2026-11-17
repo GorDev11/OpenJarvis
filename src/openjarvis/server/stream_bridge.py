@@ -105,6 +105,10 @@ class AgentStreamBridge:
         self._content_callback: Optional[Callable[[str], None]] = None
         self._cancel_event = threading.Event()
 
+    def cancel(self) -> None:
+        """Ask the agent to close its active upstream model request."""
+        self._cancel_event.set()
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -142,6 +146,8 @@ class AgentStreamBridge:
 
     def _run_agent(self) -> object:
         """Execute the agent synchronously (called via asyncio.to_thread)."""
+        if self._cancel_event.is_set():
+            raise RuntimeError("Agent request cancelled before execution")
         if self._runner is not None:
             callback = self._content_callback or (lambda _content: None)
             return self._runner(callback, self._cancel_event)
@@ -181,6 +187,8 @@ class AgentStreamBridge:
 
     async def stream(self) -> AsyncGenerator[str, None]:
         """Async generator that yields SSE-formatted strings."""
+        if self._cancel_event.is_set():
+            return
         self._subscribe_all()
 
         # Kick off agent.run() in a background thread

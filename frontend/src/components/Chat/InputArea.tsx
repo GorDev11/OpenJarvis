@@ -3,7 +3,7 @@ import { Send, Square, Paperclip, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
 import { useTtsStore } from '../../lib/tts';
-import { streamChat, streamResearch } from '../../lib/sse';
+import { cancelChat, streamChat, streamResearch } from '../../lib/sse';
 import { fetchSavings, getBase } from '../../lib/api';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
 import { serializeToolCallArguments } from '../../lib/tool-call';
@@ -85,6 +85,7 @@ export function InputArea() {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const chatRequestIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const activeId = useAppStore((s) => s.activeId);
@@ -113,13 +114,31 @@ export function InputArea() {
     stopRecording,
   } = useSpeech();
 
+  // Signal cancellation to the backend before disconnecting the SSE reader.
+  const cancelActiveChat = useCallback(() => {
+    const controller = abortRef.current;
+    const requestId = chatRequestIdRef.current;
+    chatRequestIdRef.current = null;
+    if (!requestId) {
+      controller?.abort();
+      return;
+    }
+    void cancelChat(requestId)
+      .then((acknowledged) => {
+        if (!acknowledged) {
+          toast.warning('Stop was not acknowledged by OpenJarvis; Colibri may still be running.');
+        }
+      })
+      .finally(() => controller?.abort());
+  }, []);
+
   // Abort in-flight stream when the user switches models mid-generation.
   // This prevents errors from trying to continue a stream with a stale model.
   const prevModelRef = useRef(selectedModel);
   useEffect(() => {
     if (prevModelRef.current !== selectedModel) {
       if (streamState.isStreaming) {
-        abortRef.current?.abort();
+        cancelActiveChat();
         const allMessages = useAppStore.getState().messages;
         const current = allMessages[allMessages.length - 1];
         if (current?.role === 'assistant') useTtsStore.getState().markAutoSpoken(current.id);
@@ -134,7 +153,7 @@ export function InputArea() {
       useTtsStore.getState().stop();
     }
     prevModelRef.current = selectedModel;
-  }, [selectedModel, streamState.isStreaming, resetStream]);
+  }, [selectedModel, streamState.isStreaming, resetStream, cancelActiveChat]);
 
   const micDisabled = !speechEnabled || !speechAvailable || streamState.isStreaming;
   const micReason: 'not-enabled' | 'no-backend' | 'streaming' | undefined =
@@ -176,13 +195,13 @@ export function InputArea() {
     const last = allMessages[allMessages.length - 1];
     if (last?.role === 'assistant') useTtsStore.getState().markAutoSpoken(last.id);
     useTtsStore.getState().stop();
-    abortRef.current?.abort();
+    cancelActiveChat();
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     resetStream();
-  }, [resetStream]);
+  }, [resetStream, cancelActiveChat]);
 
   const sendMessage = useCallback(async () => {
     const content = input.trim();
@@ -238,6 +257,8 @@ export function InputArea() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const chatRequestId = useResearch ? null : crypto.randomUUID();
+    chatRequestIdRef.current = chatRequestId;
 
     let accumulatedContent = '';
     let usage: TokenUsage | undefined;
@@ -397,6 +418,7 @@ export function InputArea() {
       for await (const sseEvent of streamChat(
         { model: selectedModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
         controller.signal,
+        chatRequestId ?? undefined,
       )) {
         const eventName = sseEvent.event;
 
@@ -546,7 +568,8 @@ export function InputArea() {
         timestamp: Date.now(), level: 'info', category: 'chat',
         message: `Response: ${accumulatedContent.length} chars`,
       });
-      abortRef.current = null;
+      if (abortRef.current === controller) abortRef.current = null;
+      if (chatRequestIdRef.current === chatRequestId) chatRequestIdRef.current = null;
 
       // Research path updates session counters optimistically from the
       // `done` event's usage payload — re-fetching here would overwrite

@@ -25,7 +25,7 @@ from openjarvis.server.connectors_router import create_connectors_router
 from openjarvis.server.dashboard import dashboard_router
 from openjarvis.server.digest_routes import create_digest_router
 from openjarvis.server.research_router import router as research_router
-from openjarvis.server.routes import router
+from openjarvis.server.routes import ChatCancellationRegistry, router
 from openjarvis.server.upload_router import router as upload_router
 
 logger = logging.getLogger(__name__)
@@ -300,6 +300,7 @@ def create_app(
     app.state.engine = engine
     app.state.model = model
     app.state.agent = agent
+    app.state.chat_cancellations = ChatCancellationRegistry()
     app.state.bus = bus
     app.state.engine_name = engine_name
     app.state.agent_name = agent_name or (
