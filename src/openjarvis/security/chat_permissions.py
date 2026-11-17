@@ -13,6 +13,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+
 from openjarvis.core.paths import get_config_dir
 from openjarvis.security.confirmation import is_desktop_runtime
 
