@@ -104,11 +104,15 @@ def test_closing_stream_signals_worker_cancellation():
         messages=[{"role": "user", "content": "Hi"}],
         stream=True,
     )
+    started = threading.Event()
     stopped = threading.Event()
 
     def runner(_emit_content, cancel_event):  # noqa: ANN001
-        cancel_event.wait(timeout=2)
-        stopped.set()
+        started.set()
+        # Check that the running worker is actually cancelled; a timeout must
+        # not be mistaken for a successful Stop.
+        if cancel_event.wait(timeout=3):
+            stopped.set()
         return AgentResult(content="", metadata={})
 
     bridge = AgentStreamBridge(
@@ -121,9 +125,14 @@ def test_closing_stream_signals_worker_cancellation():
 
     async def open_then_close() -> None:
         stream = bridge.stream()
-        await anext(stream)  # role chunk; worker is running
+        await anext(stream)  # role chunk; worker is now scheduled
+        # asyncio.to_thread may not have entered the worker yet. The earlier
+        # test closed the stream before thread startup, making cancellation
+        # correctly prevent the worker from running at all.
+        assert await asyncio.to_thread(started.wait, 3)
         await stream.aclose()
-        assert await asyncio.to_thread(stopped.wait, 1)
+        assert await asyncio.to_thread(stopped.wait, 3)
+        assert bridge._cancel_event.is_set()
 
     asyncio.run(open_then_close())
 
