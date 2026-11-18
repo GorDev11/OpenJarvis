@@ -404,7 +404,7 @@ class TestOrchestratorAgent:
         assert len(engine.generate.call_args.kwargs["tools"]) == 2
 
     @pytest.mark.asyncio
-    async def test_streamed_standalone_greeting_uses_orchestrator_without_tool_schemas(self):
+    async def test_streamed_greeting_skips_tool_schemas(self):
         engine = MagicMock()
         engine.engine_id = "mock"
         captures = []
