@@ -55,7 +55,9 @@ def select_request_tool_manifest(
         return full_manifest
 
     text = " ".join((user_input or "").split())
-    if not text or not _MATH_TASK.search(text):
+    # Without supplied numeric inputs a "calculate" request may require
+    # retrieving data first. Do not narrow its available tool choices.
+    if not text or not re.search(r"[0-9]", text) or not _MATH_TASK.search(text):
         return full_manifest
     if _EXTERNAL_OR_ACTION.search(text):
         return full_manifest
