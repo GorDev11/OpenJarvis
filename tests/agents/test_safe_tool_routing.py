@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from openjarvis.agents.safe_tool_routing import is_pure_greeting, select_safe_tool_routes
+from openjarvis.agents.safe_tool_routing import (
+    is_pure_greeting,
+    select_safe_tool_routes,
+)
 
 
 @pytest.mark.parametrize(
@@ -117,7 +120,16 @@ def test_never_routes_a_tool_that_is_not_available() -> None:
 
 @pytest.mark.parametrize(
     "query",
-    ["Բարև", "Բարև Ձեզ!", "Բարեւ", "Ողջույն", "Привет!", "Здравствуйте", "Hi", "Hello."],
+    [
+        "Բարև",
+        "Բարև Ձեզ!",
+        "Բարեւ",
+        "Ողջույն",
+        "Привет!",
+        "Здравствуйте",
+        "Hi",
+        "Hello.",
+    ],
 )
 def test_pure_greeting_skips_tool_schemas(query: str) -> None:
     assert is_pure_greeting(query)
