@@ -320,7 +320,7 @@ export function SettingsPage() {
       setSelfTestResult(result);
       state.addLogEntry({
         timestamp: Date.now(), level: 'info', category: 'chat',
-        message: `Orchestrator self-test OK: model=${result.model}, ttft=${result.firstTokenMs}ms, total=${result.totalMs}ms, finish=${result.finishReason}, toolEvents=${result.toolEvents}`,
+        message: `Orchestrator self-test OK: model=${result.model}, ttft=${result.firstTokenMs}ms, total=${result.totalMs}ms, finish=${result.finishReason}, toolEvents=${result.toolEvents}, toolsAvailable=${result.toolCount ?? 'unknown'}, toolSchemaChars=${result.toolSchemaChars ?? 'unknown'}, promptChars=${result.promptChars ?? 'unknown'}`,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -679,6 +679,9 @@ export function SettingsPage() {
                     Passed · first token {(selfTestResult.firstTokenMs / 1000).toFixed(1)}s ·
                     total {(selfTestResult.totalMs / 1000).toFixed(1)}s ·
                     {selfTestResult.finishReason}
+                    {selfTestResult.toolCount !== null && (
+                      <> · {selfTestResult.toolCount} tools · {selfTestResult.toolSchemaChars} schema chars</>
+                    )}
                   </span>
                 )}
                 {selfTestError && (
