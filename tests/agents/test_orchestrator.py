@@ -461,23 +461,63 @@ class TestOrchestratorAgent:
         assert "tools" not in captures[0]
         assert len(agent._tools) == 1
 
-    def test_standalone_math_uses_calculator_without_unloading_other_tools(self):
+    def test_streamed_length_finish_does_not_issue_hidden_continuations(self):
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        agent = OrchestratorAgent(engine, "test-model", tools=[])
+        chunks = []
+        agent._generate_streaming = MagicMock(
+            return_value={
+                "content": "bounded answer",
+                "tool_calls": [],
+                "usage": {"completion_tokens": 2},
+                "finish_reason": "length",
+                "_streamed_content": "bounded answer",
+            }
+        )
+
+        result = agent.run(
+            "Give me a bounded answer",
+            stream_callback=chunks.append,
+        )
+
+        assert result.content == "bounded answer"
+        agent._generate_streaming.assert_called_once()
+        engine.generate.assert_not_called()
+
+    def test_standalone_math_optimization_skips_schemas_without_unloading_tools(self):
         engine = _make_engine_no_tools("24,600 դրամ")
         agent = OrchestratorAgent(
             engine,
             "test-model",
             tools=[_CalculatorStub(), _ThinkStub(), _StaticToolStub("shell_exec")],
         )
-        result = agent.run("Հաշվիր 5 պատվերների շահույթը 8 ժամում")
+        result = agent.run(
+            "Հաշվիր առավելագույն շահույթը՝ A=8200, B=6210, C=11800, 8 ժամում"
+        )
 
         assert result.content == "24,600 դրամ"
-        offered = engine.generate.call_args.kwargs["tools"]
-        assert [tool["function"]["name"] for tool in offered] == ["calculator"]
+        assert "tools" not in engine.generate.call_args.kwargs
         assert {tool.spec.name for tool in agent._tools} == {
             "calculator",
             "think",
             "shell_exec",
         }
+
+    def test_standalone_arithmetic_uses_calculator_only(self):
+        engine = _make_engine_no_tools("4")
+        agent = OrchestratorAgent(
+            engine,
+            "test-model",
+            tools=[_CalculatorStub(), _ThinkStub(), _StaticToolStub("shell_exec")],
+        )
+
+        result = agent.run("Հաշվիր 2+2")
+
+        assert result.content == "4"
+        offered = engine.generate.call_args.kwargs["tools"]
+        assert [tool["function"]["name"] for tool in offered] == ["calculator"]
+        assert len(agent._tools) == 3
 
     def test_followup_math_keeps_full_tool_manifest(self):
         engine = _make_engine_no_tools()

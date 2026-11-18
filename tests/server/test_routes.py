@@ -236,6 +236,32 @@ class TestMemoryServiceWiring:
 
 
 class TestChatCompletions:
+    def test_complexity_recommendation_never_overrides_client_token_limit(self):
+        from openjarvis.server.models import ChatCompletionRequest, ChatMessage
+        from openjarvis.server.routes import _analyze_request_complexity
+
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[
+                ChatMessage(
+                    role="user",
+                    content=(
+                        "Analyze and compare these alternatives step-by-step, "
+                        "then explain the trade-offs and prove the conclusion."
+                    ),
+                )
+            ],
+            max_tokens=64,
+        )
+        recommendation = _analyze_request_complexity(
+            request.messages[-1].content,
+            request.model,
+        )
+
+        assert request.max_tokens == 64
+        assert recommendation is not None
+        assert recommendation.suggested_max_tokens > request.max_tokens
+
     def test_server_agent_cannot_use_default_grant_after_explicit_deny(self):
         from openjarvis.agents.orchestrator import OrchestratorAgent
         from openjarvis.core.types import ToolResult

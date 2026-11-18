@@ -1,9 +1,11 @@
 """Conservative per-request tool manifest selection for local Orchestrator inference.
 
 Registered tools and the ToolExecutor are NEVER changed. On a narrowly
-recognized, self-contained arithmetic problem, advertising only calculator
-avoids unnecessary function-schema prefill on CPU/GPU hybrid models. Any
-ambiguous, external-data, multi-tool, or follow-up task keeps the full tool
+recognized arithmetic expression, advertising only calculator avoids
+unnecessary function-schema prefill on CPU/GPU hybrid models. A fully
+self-contained optimization problem needs model reasoning rather than an
+external action, so it can omit schemas for that turn. Any ambiguous,
+external-data, multi-tool, or genuinely contextual task keeps the full tool
 manifest. Do not use this to bypass tool approvals or capability policy.
 """
 
@@ -19,6 +21,13 @@ _MATH_TASK = re.compile(
     r"математик\w*)\b"
     r"|(?:հաշվ\w*|շահույթ\w*|գումար\w*|մաթեմատիկ\w*|"
     r"համադրությ\w*|առավելագույն\s+շահույթ)",
+    re.IGNORECASE,
+)
+
+_OPTIMIZATION_TASK = re.compile(
+    r"\b(?:knapsack|optimis\w*|optimiz\w*|profit\w*|combination\w*|"
+    r"прибыл\w*|комбинац\w*|оптимиз\w*)\b"
+    r"|(?:շահույթ\w*|համադրությ\w*|առավելագույն\s+շահույթ|օպտիմալ\w*)",
     re.IGNORECASE,
 )
 
@@ -45,13 +54,13 @@ def select_request_tool_manifest(
     *,
     has_conversation_context: bool = False,
 ) -> list[dict[str, Any]]:
-    """Choose a minimal manifest only for unambiguous, standalone math.
+    """Choose a minimal manifest only for unambiguous, self-contained math.
 
     All other prompts retain all tool definitions, including code execution,
     file tools, MCP tools, etc., subject to existing security approvals.
     """
     full_manifest = list(tools)
-    if has_conversation_context or not full_manifest:
+    if not full_manifest:
         return full_manifest
 
     text = " ".join((user_input or "").split())
@@ -87,6 +96,24 @@ def select_request_tool_manifest(
             and re.search(rf"(?<![\w]){re.escape(name)}(?![\w])", text, re.IGNORECASE)
         ):
             return full_manifest
+
+    optimization_task = bool(_OPTIMIZATION_TASK.search(text))
+    numeric_inputs = re.findall(r"(?<!\w)[+-]?(?:\d+(?:[.,]\d+)?)(?!\w)", text)
+
+    # A follow-up normally keeps every capability because earlier turns may
+    # change the current instruction. A fully specified optimization prompt
+    # is the safe exception: multiple numeric inputs plus optimization intent
+    # make it independent of earlier chat, and calculator cannot solve the
+    # combinatorial reasoning by itself. Omitting schemas here avoids a slow,
+    # unnecessary tool-call turn while leaving every registered tool intact
+    # for subsequent requests.
+    if has_conversation_context and not (
+        optimization_task and len(numeric_inputs) >= 2
+    ):
+        return full_manifest
+
+    if optimization_task and len(numeric_inputs) >= 2:
+        return []
 
     return [calculator]
 

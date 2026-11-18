@@ -669,7 +669,18 @@ class OrchestratorAgent(ToolUsingAgent):
 
             # No tool calls -> check continuation, then final answer
             if not raw_tool_calls:
-                content = self._check_continuation(result, messages)
+                # A live OpenAI-compatible stream must respect the caller's
+                # max_tokens as the total response limit. Automatically
+                # issuing two hidden, non-streamed continuation requests made
+                # a 768-token Colibri response silently grow to as many as
+                # 2304 tokens and left the UI apparently frozen between
+                # chunks. Synchronous agent callers retain the historical
+                # completion-recovery behaviour.
+                content = self._check_continuation(
+                    result,
+                    messages,
+                    max_continuations=0 if stream_callback is not None else 2,
+                )
                 stripped_content = self._strip_think_tags(content)
                 guarded_content = (
                     content

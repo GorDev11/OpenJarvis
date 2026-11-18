@@ -70,6 +70,38 @@ def _resolve_allowed_tools(config: object) -> tuple[set[str], bool]:
     return allowed, True
 
 
+def _instrument_server_engine(engine, config, bus, output_console):
+    """Apply configured request telemetry without forcing GPU polling."""
+    if not config.telemetry.enabled:
+        return engine
+
+    try:
+        from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
+
+        energy_mon = None
+        if config.telemetry.gpu_metrics:
+            try:
+                from openjarvis.telemetry.energy_monitor import create_energy_monitor
+
+                energy_mon = create_energy_monitor(
+                    poll_interval_ms=config.telemetry.gpu_poll_interval_ms,
+                    prefer_vendor=config.telemetry.energy_vendor or None,
+                    allow_estimates=config.telemetry.allow_energy_estimates,
+                )
+                if energy_mon is not None:
+                    output_console.print(
+                        f"  Energy: [cyan]{energy_mon.vendor().value}[/cyan] "
+                        f"({energy_mon.energy_method()})"
+                    )
+            except Exception as exc:
+                logger.debug("Energy monitor creation failed: %s", exc)
+
+        return InstrumentedEngine(engine, bus, energy_monitor=energy_mon)
+    except Exception as exc:
+        logger.debug("Engine instrumentation failed: %s", exc)
+        return engine
+
+
 def _unique_model_ids(model_ids: list[str]) -> list[str]:
     """Return model ids in first-seen order without duplicates."""
     unique: list[str] = []
@@ -245,26 +277,10 @@ def serve(
         except Exception as exc:
             logger.debug("Cloud engine init failed: %s", exc)
 
-    # Wrap engine with InstrumentedEngine for telemetry recording
-    try:
-        from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
-
-        energy_mon = None
-        try:
-            from openjarvis.telemetry.energy_monitor import create_energy_monitor
-
-            energy_mon = create_energy_monitor()
-            if energy_mon is not None:
-                console.print(
-                    f"  Energy: [cyan]{energy_mon.vendor().value}[/cyan] "
-                    f"({energy_mon.energy_method()})"
-                )
-        except Exception as exc:
-            logger.debug("Energy monitor creation failed: %s", exc)
-
-        engine = InstrumentedEngine(engine, bus, energy_monitor=energy_mon)
-    except Exception as exc:
-        logger.debug("Engine instrumentation failed: %s", exc)
+    # Respect both telemetry switches. The previous serve path unconditionally
+    # started NVML polling every 50 ms, even with ``gpu_metrics = false``. On
+    # hybrid CPU/GPU runtimes such as Colibri that competes with generation.
+    engine = _instrument_server_engine(engine, config, bus, console)
 
     # Discover models
     all_engines = discover_engines(config)

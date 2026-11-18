@@ -328,31 +328,10 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             query_text_for_complexity = m.content
             break
     if query_text_for_complexity:
-        try:
-            from openjarvis.learning.routing.complexity import (
-                adjust_tokens_for_model,
-                score_complexity,
-            )
-
-            cr = score_complexity(query_text_for_complexity)
-            suggested = adjust_tokens_for_model(
-                cr.suggested_max_tokens,
-                model,
-            )
-            complexity_info = ComplexityInfo(
-                score=cr.score,
-                tier=cr.tier,
-                suggested_max_tokens=suggested,
-            )
-            # Bump max_tokens when complexity suggests more than what
-            # the client requested — never reduce below the request value.
-            if suggested > request_body.max_tokens:
-                request_body.max_tokens = suggested
-        except Exception:
-            logging.getLogger("openjarvis.server").debug(
-                "Complexity analysis failed",
-                exc_info=True,
-            )
+        complexity_info = _analyze_request_complexity(
+            query_text_for_complexity,
+            model,
+        )
 
     if request_body.stream:
         # When the client passes `tools`, stream the model's raw
@@ -452,6 +431,33 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         source="server.chat",
     )
     return response
+
+
+def _analyze_request_complexity(query: str, model: str) -> ComplexityInfo | None:
+    """Return a recommendation without mutating the caller's token limit."""
+    try:
+        from openjarvis.learning.routing.complexity import (
+            adjust_tokens_for_model,
+            score_complexity,
+        )
+
+        result = score_complexity(query)
+        suggested = adjust_tokens_for_model(result.suggested_max_tokens, model)
+        # ``max_tokens`` is an explicit caller limit, not a hint. Keep this
+        # recommendation in response telemetry so the UI can suggest a larger
+        # budget, but never silently exceed the desktop setting (or any
+        # OpenAI-compatible client's requested cap).
+        return ComplexityInfo(
+            score=result.score,
+            tier=result.tier,
+            suggested_max_tokens=suggested,
+        )
+    except Exception:
+        logging.getLogger("openjarvis.server").debug(
+            "Complexity analysis failed",
+            exc_info=True,
+        )
+        return None
 
 
 def _response_content(response) -> str:

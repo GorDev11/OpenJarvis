@@ -27,9 +27,9 @@ def _tools() -> list[dict]:
 @pytest.mark.parametrize(
     "user_input",
     [
-        "Հաշվիր 5 պատվերների շահույթը և ստուգիր բոլոր հնարավոր համադրությունները։",
-        "Calculate profits for 5 orders and prove the best combination.",
-        "Рассчитай прибыль для 5 заказов и все возможные комбинации.",
+        "Հաշվիր 2+2։",
+        "Calculate 21*4.",
+        "Рассчитай 15-7.",
     ],
 )
 def test_standalone_arithmetic_advertises_calculator_only(user_input: str):
@@ -46,6 +46,34 @@ def test_standalone_arithmetic_advertises_calculator_only(user_input: str):
         "system_diagnostics",
         "shell_exec",
     ]
+
+
+@pytest.mark.parametrize(
+    "user_input",
+    [
+        "Հաշվիր առավելագույն շահույթը՝ A=8200, B=6210, C=11800, 8 ժամում։",
+        "Optimize profit for A=8200, B=6210, C=11800 within 8 hours.",
+        "Оптимизируй прибыль: A=8200, B=6210, C=11800 за 8 часов.",
+    ],
+)
+def test_self_contained_optimization_omits_schemas_for_one_turn(user_input: str):
+    original = _tools()
+
+    assert select_request_tool_manifest(user_input, original) == []
+    assert len(original) == 6
+
+
+def test_self_contained_optimization_remains_schema_free_in_existing_chat():
+    original = _tools()
+
+    assert (
+        select_request_tool_manifest(
+            "Հաշվիր առավելագույն շահույթը՝ A=8200, B=6210, C=11800, 8 ժամում։",
+            original,
+            has_conversation_context=True,
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -72,6 +100,19 @@ def test_follow_up_math_question_retains_full_tool_access():
     assert (
         select_request_tool_manifest(
             "Հաշվիր շահույթը", original, has_conversation_context=True
+        )
+        == original
+    )
+
+
+def test_underspecified_follow_up_optimization_retains_full_tool_access():
+    original = _tools()
+
+    assert (
+        select_request_tool_manifest(
+            "Հաշվիր 5 պատվերների լավագույն համադրությունը",
+            original,
+            has_conversation_context=True,
         )
         == original
     )
