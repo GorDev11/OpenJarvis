@@ -736,7 +736,9 @@ class OrchestratorAgent(ToolUsingAgent):
                 # continuation calls. HTTP callers explicitly request zero.
                 if stream_callback is not None or kwargs.get("max_continuations") == 0:
                     metadata["performance"] = {
-                        "agent_wall_seconds": round(time.perf_counter() - run_started, 3),
+                        "agent_wall_seconds": round(
+                            time.perf_counter() - run_started, 3
+                        ),
                         "inference_wall_seconds": round(inference_wall_seconds, 3),
                         "inference_calls": inference_calls,
                         "tool_calls": len(all_tool_results),
@@ -911,7 +913,10 @@ class OrchestratorAgent(ToolUsingAgent):
                             "registered_tool_count": len(openai_tools),
                         }
                     }
-                    if stream_callback is not None or kwargs.get("max_continuations") == 0
+                    if (
+                        stream_callback is not None
+                        or kwargs.get("max_continuations") == 0
+                    )
                     else {}
                 ),
             },
