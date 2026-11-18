@@ -62,7 +62,7 @@ def select_request_tool_manifest(
     # Greeting-prefixed instructions are mixed-intent turns. Retain the full
     # manifest rather than guessing from one mathematical verb.
     if re.match(
-        r"^(?:hello|hi|hey|привет|բարև|բարեւ)\\s*[,，،]",
+        r"^(?:hello|hi|hey|привет|բարև|բարեւ)\s*[,，،]",
         text,
         re.IGNORECASE,
     ):
