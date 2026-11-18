@@ -366,10 +366,68 @@ class TestOrchestratorAgent:
             "test-model",
             tools=[_CalculatorStub()],
         )
-        agent.run("Hello")
+        agent.run("Calculate 2+2")
         call_kwargs = engine.generate.call_args[1]
         assert "tools" in call_kwargs
         assert len(call_kwargs["tools"]) == 1
+
+    @pytest.mark.parametrize("greeting", ["Բարև", "Բարև Ձեզ", "Привет!", "Hello", "Hi"])
+    def test_standalone_greeting_preserves_orchestrator_but_skips_tool_schemas(
+        self, greeting
+    ):
+        engine = _make_engine_no_tools("Hello!")
+        tools = [_CalculatorStub(), _ThinkStub()]
+        agent = OrchestratorAgent(engine, "test-model", tools=tools)
+        result = agent.run(greeting)
+
+        assert result.content == "Hello!"
+        assert result.turns == 1
+        assert len(agent._tools) == len(tools)
+        assert "tools" not in engine.generate.call_args.kwargs
+
+    @pytest.mark.parametrize(
+        "request",
+        [
+            "Բարև, հաշվիր 2+2",
+            "Привет, посчитай 2+2",
+            "Hello, calculate 2+2",
+            "Hi, run system diagnostics",
+            "Բարև, ստուգիր համակարգիչը",
+        ],
+    )
+    def test_greeting_with_task_keeps_all_tool_schemas(self, request):
+        engine = _make_engine_no_tools()
+        agent = OrchestratorAgent(
+            engine, "test-model", tools=[_CalculatorStub(), _ThinkStub()]
+        )
+        agent.run(request)
+        assert len(engine.generate.call_args.kwargs["tools"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_streamed_standalone_greeting_uses_orchestrator_without_tool_schemas(self):
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        captures = []
+
+        async def stream_full(*args, **kwargs):  # noqa: ANN002, ANN003
+            captures.append(kwargs)
+            yield StreamChunk(content="Բարև Ձեզ", finish_reason="stop")
+
+        engine.stream_full = stream_full
+        agent = OrchestratorAgent(engine, "test-model", tools=[_CalculatorStub()])
+        chunks = []
+        result = await asyncio.to_thread(
+            agent.run,
+            "Բարև",
+            stream_callback=chunks.append,
+            stream_event_loop=asyncio.get_running_loop(),
+        )
+        assert result.content == "Բարև Ձեզ"
+        assert chunks == ["Բարև Ձեզ"]
+        assert len(captures) == 1
+        assert "tools" not in captures[0]
+        assert len(agent._tools) == 1
+
 
     def test_deterministic_network_route_suppresses_extra_model_tools(self):
         engine = _make_engine_no_tools("DNS-ը հասանելի է, gateway-ը՝ 192.168.1.1։")
