@@ -73,8 +73,7 @@ def select_request_tool_manifest(
     by_name = {
         definition.get("function", {}).get("name"): definition
         for definition in full_manifest
-        if isinstance(definition, dict)
-        and isinstance(definition.get("function"), dict)
+        if isinstance(definition, dict) and isinstance(definition.get("function"), dict)
     }
     calculator = by_name.get("calculator")
     if calculator is None:
@@ -82,8 +81,10 @@ def select_request_tool_manifest(
 
     # A request explicitly mentioning a different tool must not hide it.
     for name in by_name:
-        if name != "calculator" and name and re.search(
-            rf"(?<![\w]){re.escape(name)}(?![\w])", text, re.IGNORECASE
+        if (
+            name != "calculator"
+            and name
+            and re.search(rf"(?<![\w]){re.escape(name)}(?![\w])", text, re.IGNORECASE)
         ):
             return full_manifest
 
