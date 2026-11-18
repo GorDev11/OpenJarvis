@@ -10,6 +10,7 @@ export interface AssistantSelfTestResult {
   toolEvents: number;
   promptChars: number | null;
   toolCount: number | null;
+  availableToolCount: number | null;
   toolSchemaChars: number | null;
 }
 
@@ -42,6 +43,7 @@ export async function runAssistantSelfTest(
   let toolEvents = 0;
   let promptChars: number | null = null;
   let toolCount: number | null = null;
+  let availableToolCount: number | null = null;
   let toolSchemaChars: number | null = null;
 
   try {
@@ -63,10 +65,12 @@ export async function runAssistantSelfTest(
           const data = JSON.parse(event.data) as {
             prompt_chars?: number;
             tool_count?: number;
+            available_tool_count?: number;
             tool_schema_chars?: number;
           };
           if (typeof data.prompt_chars === 'number') promptChars = data.prompt_chars;
           if (typeof data.tool_count === 'number') toolCount = data.tool_count;
+          if (typeof data.available_tool_count === 'number') availableToolCount = data.available_tool_count;
           if (typeof data.tool_schema_chars === 'number') toolSchemaChars = data.tool_schema_chars;
         } catch { /* older backends have no size telemetry */ }
         onPhase('Inference started; waiting for the first token...');
@@ -104,6 +108,7 @@ export async function runAssistantSelfTest(
       toolEvents,
       promptChars,
       toolCount,
+      availableToolCount,
       toolSchemaChars,
     };
   } catch (error) {
