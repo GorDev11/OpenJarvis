@@ -334,7 +334,6 @@ class TestChatCompletions:
         assert len(denied) == 1
         assert denied[0].data["agent_id"] == "server-agent"
 
-
     def test_non_stream_orchestrator_keeps_token_cap_and_exposes_phase_timing(self):
         """HTTP max_tokens is a hard cap; never silently make continuations."""
         from openjarvis.agents.orchestrator import OrchestratorAgent

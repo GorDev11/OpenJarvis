@@ -690,7 +690,8 @@ class OrchestratorAgent(ToolUsingAgent):
                     result,
                     messages,
                     max_continuations=(
-                        0 if stream_callback is not None
+                        0
+                        if stream_callback is not None
                         else kwargs.get("max_continuations", 2)
                     ),
                 )
@@ -744,8 +745,9 @@ class OrchestratorAgent(ToolUsingAgent):
                         "tool_calls": len(all_tool_results),
                         "prompt_chars": initial_prompt_chars,
                         "advertised_tool_count": (
-                            len(inference_tools) if not deterministic_routes
-                            and not greeting_only else 0
+                            len(inference_tools)
+                            if not deterministic_routes and not greeting_only
+                            else 0
                         ),
                         "registered_tool_count": len(openai_tools),
                     }
@@ -907,8 +909,9 @@ class OrchestratorAgent(ToolUsingAgent):
                             "tool_calls": len(all_tool_results),
                             "prompt_chars": initial_prompt_chars,
                             "advertised_tool_count": (
-                                len(inference_tools) if not deterministic_routes
-                                and not greeting_only else 0
+                                len(inference_tools)
+                                if not deterministic_routes and not greeting_only
+                                else 0
                             ),
                             "registered_tool_count": len(openai_tools),
                         }

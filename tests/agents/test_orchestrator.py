@@ -189,7 +189,6 @@ class TestOrchestratorAgent:
         )
         assert agent._executor._capability_policy is policy
 
-
     def test_sdk_continuations_remain_available_for_legacy_callers(self):
         engine = _make_engine_no_tools()
         engine.generate.side_effect = [
