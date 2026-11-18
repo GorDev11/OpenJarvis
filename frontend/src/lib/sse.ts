@@ -44,7 +44,14 @@ export async function* streamChat(
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        if (signal?.aborted) {
+          throw new DOMException('Chat request was cancelled', 'AbortError');
+        }
+        // A clean HTTP EOF is not an OpenAI-compatible completion.
+        // The server must send [DONE]; otherwise surface the disconnect.
+        throw new Error('Chat stream ended before [DONE]; backend disconnected or was restarted.');
+      }
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
@@ -55,7 +62,12 @@ export async function* streamChat(
           currentEvent = line.slice(7).trim();
         } else if (line.startsWith('data: ')) {
           const data = line.slice(6);
-          if (data === '[DONE]') return;
+          if (data === '[DONE]') {
+            if (signal?.aborted) {
+              throw new DOMException('Chat request was cancelled', 'AbortError');
+            }
+            return;
+          }
           yield { event: currentEvent, data };
           currentEvent = undefined;
         } else if (line.trim() === '') {
