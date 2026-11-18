@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from openjarvis.agents.safe_tool_routing import select_safe_tool_routes
+from openjarvis.agents.safe_tool_routing import is_pure_greeting, select_safe_tool_routes
 
 
 @pytest.mark.parametrize(
@@ -113,3 +113,27 @@ def test_does_not_route_explanations_or_negated_requests(query: str) -> None:
 
 def test_never_routes_a_tool_that_is_not_available() -> None:
     assert not select_safe_tool_routes("Check my internet", ["calculator"])
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["Բարև", "Բարև Ձեզ!", "Բարեւ", "Ողջույն", "Привет!", "Здравствуйте", "Hi", "Hello."],
+)
+def test_pure_greeting_skips_tool_schemas(query: str) -> None:
+    assert is_pure_greeting(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Բարև, ստուգիր ինտերնետը",
+        "Hello, calculate 2+2",
+        "Hi, read my email",
+        "Привет, проверь систему",
+        "Բարև, բացիր ֆայլը",
+        "What is 2+2?",
+        "",
+    ],
+)
+def test_real_tasks_never_classified_as_greeting(query: str) -> None:
+    assert not is_pure_greeting(query)
