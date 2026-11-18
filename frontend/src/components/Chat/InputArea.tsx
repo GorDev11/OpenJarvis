@@ -507,7 +507,10 @@ export function InputArea() {
                 lastFlush = now;
               }
             }
-            if (data.choices?.[0]?.finish_reason === 'stop') break;
+// Do not stop reading at finish_reason: the backend sends [DONE]
+            // only after completing agent finalization and cleanup. The SSE
+            // reader validates that marker, so a dropped connection is an
+            // explicit error instead of an apparently successful reply.
           } catch {}
         }
       }
