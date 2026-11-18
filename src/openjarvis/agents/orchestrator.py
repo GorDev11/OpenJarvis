@@ -562,12 +562,21 @@ class OrchestratorAgent(ToolUsingAgent):
         stream_event_loop = kwargs.get("stream_event_loop")
         stream_cancel_event = kwargs.get("stream_cancel_event")
         streamed_tool_preambles = ""
-        from openjarvis.agents.safe_tool_routing import select_safe_tool_routes
+        from openjarvis.agents.safe_tool_routing import (
+            is_pure_greeting,
+            select_safe_tool_routes,
+        )
 
         deterministic_routes = select_safe_tool_routes(
             input,
             (tool.spec.name for tool in self._tools),
         )
+        # Pure standalone greetings require no external operations. Keep the
+        # Orchestrator and its full registered tool set intact for all actual
+        # tasks, but avoid passing costly function schemas into hybrid GPU/CPU
+        # model prefill for "Բարև" / "hello".
+        greeting_only = is_pure_greeting(input)
+
         pending_routed_calls = [
             {
                 "id": f"safe_route_{index}",
@@ -589,7 +598,7 @@ class OrchestratorAgent(ToolUsingAgent):
             # read-only diagnostic(s) requested by the user. The follow-up
             # model turn must summarize those results, not escalate to a
             # broader tool such as shell_exec or repeat extra diagnostics.
-            if openai_tools and not deterministic_routes:
+            if openai_tools and not deterministic_routes and not greeting_only:
                 gen_kwargs["tools"] = openai_tools
 
             if pending_routed_calls:
