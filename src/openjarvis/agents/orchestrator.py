@@ -392,6 +392,11 @@ class OrchestratorAgent(ToolUsingAgent):
         usage: dict[str, Any] = {}
         finish_reason = ""
         response_loop_reason = ""
+        response_chars = 0
+        # Checking the ENTIRE accumulated text after every single streamed
+        # token is quadratic and slows long answers. Bound the delay between
+        # checks while retaining an unconditional final-response check below.
+        next_response_guard_check = 48
 
         gen_kwargs = {
             key: value
@@ -410,9 +415,18 @@ class OrchestratorAgent(ToolUsingAgent):
             if stream_cancel_event is not None and stream_cancel_event.is_set():
                 raise asyncio.CancelledError
             if chunk.content:
-                candidate = "".join(content_parts) + chunk.content
-                if self._loop_guard:
+                response_chars += len(chunk.content)
+                should_check_response = (
+                    response_chars >= next_response_guard_check
+                    or any(
+                        boundary in chunk.content
+                        for boundary in ("\\n", ".", "!", "?", "։")
+                    )
+                )
+                if self._loop_guard and should_check_response:
+                    candidate = "".join(content_parts) + chunk.content
                     verdict = self._loop_guard.check_response(candidate)
+                    next_response_guard_check = response_chars + 48
                     if verdict.blocked:
                         response_loop_reason = verdict.reason
                         finish_reason = "loop_guard"
