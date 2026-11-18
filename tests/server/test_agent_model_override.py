@@ -116,3 +116,38 @@ def test_model_lock_registry_does_not_retain_idle_locks_or_agents():
 
     assert agent_ref() is None
     assert agent_id not in _agent_model_locks
+
+
+class _TunableAgent:
+    """Record request-local sampling settings at the moment of inference."""
+
+    def __init__(self) -> None:
+        self._model = "default-model"
+        self._temperature = 0.7
+        self._max_tokens = 4096
+        self.observed = []
+
+    def run(self, input_text: str, context=None) -> AgentResult:
+        self.observed.append(
+            (self._model, self._temperature, self._max_tokens)
+        )
+        return AgentResult(content=input_text, turns=1)
+
+
+def test_agent_honors_request_local_sampling_limits_and_restores_defaults():
+    agent = _TunableAgent()
+    request = ChatCompletionRequest(
+        model="qwen3.6-colibri",
+        messages=[ChatMessage(role="user", content="Բարև")],
+        max_tokens=128,
+        temperature=0,
+    )
+    response = _handle_agent(agent, request.model, request)
+
+    assert response.choices[0].message.content == "Բարև"
+    assert agent.observed == [("qwen3.6-colibri", 0, 128)]
+    assert (agent._model, agent._temperature, agent._max_tokens) == (
+        "default-model",
+        0.7,
+        4096,
+    )
