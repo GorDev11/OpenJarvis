@@ -473,6 +473,22 @@ class OrchestratorAgent(ToolUsingAgent):
             result["_streamed_content"] = content
             return result
 
+        # Expose only counts, never raw system prompts or tool schemas. A
+        # large tool manifest can dominate Qwen3.6 hybrid CPU/GPU prefill,
+        # even for a greeting. These metrics make that bottleneck measurable
+        # without disabling any of the Orchestrator's registered tools.
+        tool_definitions = extra_kwargs.get("tools") or []
+        tool_count = len(tool_definitions)
+        tool_schema_chars = len(json.dumps(tool_definitions, ensure_ascii=False))
+        prompt_chars = sum(
+            len(str(getattr(message, "content", "") or "")) for message in messages
+        )
+        logger.info(
+            "Orchestrator inference payload: model=%s messages=%d prompt_chars=%d "
+            "tool_count=%d tool_schema_chars=%d",
+            self._model, len(messages), prompt_chars, tool_count, tool_schema_chars,
+        )
+
         publishes_events = getattr(self._engine, "_publishes_events", False)
         if self._bus and not publishes_events:
             self._bus.publish(
@@ -480,6 +496,9 @@ class OrchestratorAgent(ToolUsingAgent):
                 {
                     "model": self._model,
                     "engine": getattr(self._engine, "engine_id", ""),
+                    "prompt_chars": prompt_chars,
+                    "tool_count": tool_count,
+                    "tool_schema_chars": tool_schema_chars,
                 },
             )
 
