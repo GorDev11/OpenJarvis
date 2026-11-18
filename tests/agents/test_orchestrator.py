@@ -386,7 +386,7 @@ class TestOrchestratorAgent:
         assert "tools" not in engine.generate.call_args.kwargs
 
     @pytest.mark.parametrize(
-        "request",
+        "user_input",
         [
             "Բարև, հաշվիր 2+2",
             "Привет, посчитай 2+2",
@@ -395,12 +395,12 @@ class TestOrchestratorAgent:
             "Բարև, ստուգիր համակարգիչը",
         ],
     )
-    def test_greeting_with_task_keeps_all_tool_schemas(self, request):
+    def test_greeting_with_task_keeps_all_tool_schemas(self, user_input):
         engine = _make_engine_no_tools()
         agent = OrchestratorAgent(
             engine, "test-model", tools=[_CalculatorStub(), _ThinkStub()]
         )
-        agent.run(request)
+        agent.run(user_input)
         assert len(engine.generate.call_args.kwargs["tools"]) == 2
 
     @pytest.mark.asyncio
