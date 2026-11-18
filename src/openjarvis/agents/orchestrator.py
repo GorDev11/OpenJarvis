@@ -17,6 +17,7 @@ import concurrent.futures
 import json
 import logging
 import re
+import time
 from typing import Any, Callable, List, Optional
 
 from openjarvis.agents._stubs import (
@@ -563,6 +564,7 @@ class OrchestratorAgent(ToolUsingAgent):
         context: Optional[AgentContext] = None,
         **kwargs: Any,
     ) -> AgentResult:
+        run_started = time.perf_counter()
         self._emit_turn_start(input)
 
         # Build initial messages
@@ -579,6 +581,9 @@ class OrchestratorAgent(ToolUsingAgent):
         turns = 0
         total_prompt_tokens = 0
         total_completion_tokens = 0
+        inference_calls = 0
+        inference_wall_seconds = 0.0
+        initial_prompt_chars = sum(len(message.text or "") for message in messages)
         stream_callback = kwargs.get("stream_callback")
         stream_event_loop = kwargs.get("stream_event_loop")
         stream_cancel_event = kwargs.get("stream_cancel_event")
@@ -646,16 +651,21 @@ class OrchestratorAgent(ToolUsingAgent):
                 }
                 pending_routed_calls = []
             else:
-                if stream_callback is not None:
-                    result = self._generate_streaming(
-                        messages,
-                        stream_callback=stream_callback,
-                        stream_event_loop=stream_event_loop,
-                        stream_cancel_event=stream_cancel_event,
-                        **gen_kwargs,
-                    )
-                else:
-                    result = self._generate(messages, **gen_kwargs)
+                inference_started = time.perf_counter()
+                try:
+                    if stream_callback is not None:
+                        result = self._generate_streaming(
+                            messages,
+                            stream_callback=stream_callback,
+                            stream_event_loop=stream_event_loop,
+                            stream_cancel_event=stream_cancel_event,
+                            **gen_kwargs,
+                        )
+                    else:
+                        result = self._generate(messages, **gen_kwargs)
+                finally:
+                    inference_calls += 1
+                    inference_wall_seconds += time.perf_counter() - inference_started
 
             # Accumulate token usage
             usage = result.get("usage", {})
@@ -679,7 +689,10 @@ class OrchestratorAgent(ToolUsingAgent):
                 content = self._check_continuation(
                     result,
                     messages,
-                    max_continuations=0 if stream_callback is not None else 2,
+                    max_continuations=(
+                        0 if stream_callback is not None
+                        else kwargs.get("max_continuations", 2)
+                    ),
                 )
                 stripped_content = self._strip_think_tags(content)
                 guarded_content = (
@@ -718,6 +731,22 @@ class OrchestratorAgent(ToolUsingAgent):
                 if response_loop_reason:
                     metadata["response_loop_blocked"] = True
                     metadata["response_loop_reason"] = response_loop_reason
+                metadata["finish_reason"] = result.get("finish_reason", "stop")
+                # Timings are authoritative only when there are no hidden
+                # continuation calls. HTTP callers explicitly request zero.
+                if stream_callback is not None or kwargs.get("max_continuations") == 0:
+                    metadata["performance"] = {
+                        "agent_wall_seconds": round(time.perf_counter() - run_started, 3),
+                        "inference_wall_seconds": round(inference_wall_seconds, 3),
+                        "inference_calls": inference_calls,
+                        "tool_calls": len(all_tool_results),
+                        "prompt_chars": initial_prompt_chars,
+                        "advertised_tool_count": (
+                            len(inference_tools) if not deterministic_routes
+                            and not greeting_only else 0
+                        ),
+                        "registered_tool_count": len(openai_tools),
+                    }
                 return AgentResult(
                     content=final_content,
                     tool_results=all_tool_results,
@@ -864,6 +893,27 @@ class OrchestratorAgent(ToolUsingAgent):
                 "prompt_tokens": total_prompt_tokens,
                 "completion_tokens": total_completion_tokens,
                 "total_tokens": total_prompt_tokens + total_completion_tokens,
+                "finish_reason": "length",
+                **(
+                    {
+                        "performance": {
+                            "agent_wall_seconds": round(
+                                time.perf_counter() - run_started, 3
+                            ),
+                            "inference_wall_seconds": round(inference_wall_seconds, 3),
+                            "inference_calls": inference_calls,
+                            "tool_calls": len(all_tool_results),
+                            "prompt_chars": initial_prompt_chars,
+                            "advertised_tool_count": (
+                                len(inference_tools) if not deterministic_routes
+                                and not greeting_only else 0
+                            ),
+                            "registered_tool_count": len(openai_tools),
+                        }
+                    }
+                    if stream_callback is not None or kwargs.get("max_continuations") == 0
+                    else {}
+                ),
             },
         )
 

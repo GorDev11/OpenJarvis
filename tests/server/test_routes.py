@@ -334,6 +334,49 @@ class TestChatCompletions:
         assert len(denied) == 1
         assert denied[0].data["agent_id"] == "server-agent"
 
+
+    def test_non_stream_orchestrator_keeps_token_cap_and_exposes_phase_timing(self):
+        """HTTP max_tokens is a hard cap; never silently make continuations."""
+        from openjarvis.agents.orchestrator import OrchestratorAgent
+
+        engine = _make_engine()
+        engine.generate.side_effect = [
+            {
+                "content": "Truncated at budget",
+                "usage": {"prompt_tokens": 13, "completion_tokens": 96},
+                "finish_reason": "length",
+            },
+            {
+                "content": "Hidden continuation must not run",
+                "usage": {"prompt_tokens": 20, "completion_tokens": 10},
+                "finish_reason": "stop",
+            },
+        ]
+        agent = OrchestratorAgent(engine, "test-model", tools=[])
+        app = create_app(engine, "test-model", agent=agent, config=_test_config())
+        response = TestClient(app).post(
+            "/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "Write about computers"}],
+                "max_tokens": 96,
+                "stream": False,
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["choices"][0]["message"]["content"] == "Truncated at budget"
+        assert data["choices"][0]["finish_reason"] == "length"
+        assert data["usage"]["completion_tokens"] == 96
+        assert engine.generate.call_count == 1
+        assert engine.generate.call_args.kwargs["max_tokens"] == 96
+        performance = data["performance"]
+        assert performance["inference_calls"] == 1
+        assert performance["tool_calls"] == 0
+        assert performance["agent_wall_seconds"] >= performance["inference_wall_seconds"]
+        assert performance["prompt_chars"] > len("Write about computers")
+
     def test_basic_completion(self, client):
         resp = client.post(
             "/v1/chat/completions",

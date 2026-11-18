@@ -709,6 +709,12 @@ def _run_agent_result(
     # Last message is the input
     input_text = req.messages[-1].content if req.messages else ""
     run_kwargs = {}
+    # The HTTP max_tokens parameter is a firm cap, not a per-continuation
+    # budget. Keep legacy continuation recovery only for direct SDK callers.
+    from openjarvis.agents.orchestrator import OrchestratorAgent
+
+    if isinstance(agent, OrchestratorAgent):
+        run_kwargs["max_continuations"] = 0
     if stream_callback is not None and getattr(agent, "supports_live_stream", False):
         run_kwargs = {
             "stream_callback": stream_callback,
@@ -794,11 +800,12 @@ def _handle_agent(
                     content=result.content,
                     audio=audio_meta,
                 ),
-                finish_reason="stop",
+                finish_reason=result.metadata.get("finish_reason", "stop"),
             )
         ],
         usage=usage,
         complexity=complexity_info,
+        performance=result.metadata.get("performance"),
     )
 
 

@@ -72,6 +72,8 @@ class ChatCompletionResponse(BaseModel):
     choices: List[Choice] = Field(default_factory=list)
     usage: UsageInfo = Field(default_factory=UsageInfo)
     complexity: Optional[ComplexityInfo] = None
+    # Non-sensitive, request-local agent latency breakdown, when available.
+    performance: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------

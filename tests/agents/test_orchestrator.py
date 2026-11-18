@@ -189,6 +189,19 @@ class TestOrchestratorAgent:
         )
         assert agent._executor._capability_policy is policy
 
+
+    def test_sdk_continuations_remain_available_for_legacy_callers(self):
+        engine = _make_engine_no_tools()
+        engine.generate.side_effect = [
+            {"content": "First", "finish_reason": "length"},
+            {"content": " second", "finish_reason": "stop"},
+        ]
+
+        result = OrchestratorAgent(engine, "test-model").run("Explain")
+
+        assert result.content == "First second"
+        assert engine.generate.call_count == 2
+
     def test_no_tools_single_turn(self):
         engine = _make_engine_no_tools("Hello!")
         agent = OrchestratorAgent(engine, "test-model")
