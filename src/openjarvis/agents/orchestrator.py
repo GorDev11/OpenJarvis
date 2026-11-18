@@ -479,17 +479,23 @@ class OrchestratorAgent(ToolUsingAgent):
         # without disabling any of the Orchestrator's registered tools.
         tool_definitions = extra_kwargs.get("tools") or []
         tool_count = len(tool_definitions)
-        tool_schema_chars = len(json.dumps(tool_definitions, ensure_ascii=False))
+        available_tool_count = len(self._tools)
+        tool_schema_chars = (
+            len(json.dumps(tool_definitions, ensure_ascii=False))
+            if tool_definitions
+            else 0
+        )
         prompt_chars = sum(
             len(str(getattr(message, "content", "") or "")) for message in messages
         )
         logger.info(
             "Orchestrator inference payload: model=%s messages=%d prompt_chars=%d "
-            "tool_count=%d tool_schema_chars=%d",
+            "tool_count=%d available_tool_count=%d tool_schema_chars=%d",
             self._model,
             len(messages),
             prompt_chars,
             tool_count,
+            available_tool_count,
             tool_schema_chars,
         )
 
@@ -502,6 +508,7 @@ class OrchestratorAgent(ToolUsingAgent):
                     "engine": getattr(self._engine, "engine_id", ""),
                     "prompt_chars": prompt_chars,
                     "tool_count": tool_count,
+                    "available_tool_count": available_tool_count,
                     "tool_schema_chars": tool_schema_chars,
                 },
             )
