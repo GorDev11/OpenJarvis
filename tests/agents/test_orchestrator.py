@@ -428,7 +428,6 @@ class TestOrchestratorAgent:
         assert "tools" not in captures[0]
         assert len(agent._tools) == 1
 
-
     def test_deterministic_network_route_suppresses_extra_model_tools(self):
         engine = _make_engine_no_tools("DNS-ը հասանելի է, gateway-ը՝ 192.168.1.1։")
         network = _StaticToolStub(
