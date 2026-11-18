@@ -19,6 +19,7 @@ from openjarvis.server.agent_manager_routes import (  # noqa: E402
     _instantiate_managed_tool,
     _replay_history_messages,
     _sampler_kwargs,
+    _select_managed_stream_tools,
 )
 
 
@@ -240,3 +241,49 @@ class TestBuildManagedSystemPrompt:
             system_prompt_config=app_config.system_prompt,
         ).build()
         assert helper_out == direct_out
+
+
+class TestManagedStreamToolSelection:
+    """Managed SSE must apply safe schema selection without losing tools."""
+
+    @staticmethod
+    def _specs():
+        return [
+            {"type": "function", "function": {"name": name}}
+            for name in ("calculator", "shell_exec", "web_search")
+        ]
+
+    @pytest.mark.parametrize("greeting", ["Բարև", "Привет", "Hello!"])
+    def test_pure_greeting_omits_tool_schemas(self, greeting):
+        specs = self._specs()
+        assert _select_managed_stream_tools(greeting, specs) == []
+        assert len(specs) == 3
+
+    def test_standalone_arithmetic_advertises_only_calculator(self):
+        specs = self._specs()
+        selected = _select_managed_stream_tools("Calculate 2+2", specs)
+        assert selected == specs[:1]
+        assert len(specs) == 3
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [
+            "Calculate 2+2 and run shell_exec",
+            "Find current prices online and calculate 2+2",
+            "Find the latest Windows errors",
+        ],
+    )
+    def test_external_or_mixed_task_keeps_every_tool(self, prompt):
+        specs = self._specs()
+        assert _select_managed_stream_tools(prompt, specs) == specs
+
+    def test_follow_up_arithmetic_keeps_every_tool(self):
+        specs = self._specs()
+        selected = _select_managed_stream_tools(
+            "Calculate 2+2", specs, has_conversation_context=True
+        )
+        assert selected == specs
+
+    def test_absent_calculator_keeps_every_tool(self):
+        specs = self._specs()[1:]
+        assert _select_managed_stream_tools("Calculate 2+2", specs) == specs

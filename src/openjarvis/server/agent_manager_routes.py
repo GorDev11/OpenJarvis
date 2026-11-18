@@ -857,6 +857,29 @@ def _tool_progress_label(tool_name: str, args: str) -> str:
     return label
 
 
+def _select_managed_stream_tools(
+    user_content: str,
+    available_specs: List[Dict[str, Any]],
+    *,
+    has_conversation_context: bool = False,
+) -> List[Dict[str, Any]]:
+    """Trim inference schemas only for unambiguous standalone requests.
+
+    The managed agent's executor and registered tools remain unchanged.
+    Any contextual or ambiguous request retains its entire tool manifest.
+    """
+    from openjarvis.agents.safe_tool_routing import is_pure_greeting
+    from openjarvis.agents.tool_manifest import select_request_tool_manifest
+
+    if is_pure_greeting(user_content):
+        return []
+    return select_request_tool_manifest(
+        user_content,
+        available_specs,
+        has_conversation_context=has_conversation_context,
+    )
+
+
 async def _stream_managed_agent(
     *,
     manager: AgentManager,
@@ -969,7 +992,8 @@ async def _stream_managed_agent(
     # Replaying recorded tool_calls (assistant tool-use + tool results) keeps
     # multi-turn tool behaviour from regressing to fabricated output (#382).
     history = manager.list_messages(agent_id, limit=50)
-    llm_messages.extend(_replay_history_messages(history, message_id))
+    history_messages = _replay_history_messages(history, message_id)
+    llm_messages.extend(history_messages)
 
     # Append the current user message
     llm_messages.append(Message(role=Role.USER, content=user_content))
@@ -1306,8 +1330,21 @@ async def _stream_managed_agent(
     # The canonical resolver exposes the same live instances as OpenAI specs
     # for engines that run the generic streaming loop.
     stream_kwargs: Dict[str, Any] = {}
-    if resolved_toolkit.openai_specs:
-        stream_kwargs["tools"] = resolved_toolkit.openai_specs
+    all_stream_tools = resolved_toolkit.openai_specs
+    selected_stream_tools = _select_managed_stream_tools(
+        user_content,
+        all_stream_tools,
+        has_conversation_context=bool(history_messages),
+    )
+    if selected_stream_tools:
+        stream_kwargs["tools"] = selected_stream_tools
+    logger.info(
+        "Managed stream tool manifest: model=%s total=%d advertised=%d history=%s",
+        model,
+        len(all_stream_tools),
+        len(selected_stream_tools),
+        bool(history_messages),
+    )
 
     from openjarvis.tools._stubs import ToolExecutor
 
