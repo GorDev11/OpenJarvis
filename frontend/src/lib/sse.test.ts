@@ -59,4 +59,35 @@ describe('streamChat SSE framing', () => {
       },
     ]);
   });
+  it('reports a dropped stream rather than silently completing a chat', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response('event: inference_start\ndata: {"model":"qwen3.6-colibri"}\n\n' +
+        'data: {"choices":[{"delta":{"content":"Բ"},"finish_reason":null}]}\n\n',
+      { status: 200 }),
+    ));
+    const consume = async () => {
+      for await (const _event of streamChat({
+        model: 'qwen3.6-colibri',
+        messages: [{ role: 'user', content: 'Բարև' }],
+        stream: true,
+      })) { /* drain */ }
+    };
+    await expect(consume()).rejects.toThrow('Chat stream ended before [DONE]');
+  });
+
+  it('requires [DONE] even if the model emitted finish_reason stop', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+        { status: 200 }),
+    ));
+    const consume = async () => {
+      for await (const _event of streamChat({
+        model: 'qwen3.6-colibri',
+        messages: [{ role: 'user', content: 'Բարև' }],
+        stream: true,
+      })) { /* drain */ }
+    };
+    await expect(consume()).rejects.toThrow('Chat stream ended before [DONE]');
+  });
+
 });
