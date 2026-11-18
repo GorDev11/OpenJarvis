@@ -69,6 +69,53 @@ const DESKTOP_SOURCE_BRANCH: Option<&str> = Some("main");
 const DESKTOP_SOURCE_BRANCH: Option<&str> = None;
 const INSTALL_SCOPED_BACKEND: bool = cfg!(feature = "armenian-preview");
 
+// WebView2 can retain an obsolete PWA service worker after a signed NSIS
+// upgrade. That worker may keep serving an older SettingsPage even when the
+// executable reports the latest version. Repair only the embedded main view;
+// never clear the WebView2 profile or user data such as localStorage.
+#[cfg(all(target_os = "windows", feature = "armenian-preview"))]
+const DESKTOP_UI_CACHE_REPAIR_JS: &str = r#"
+(async () => {
+  try {
+    if (location.hostname !== 'tauri.localhost') return;
+    const marker = 'openjarvis-ui-cache-repair-20261118-v2';
+    if (sessionStorage.getItem(marker) === 'complete') return;
+    sessionStorage.setItem(marker, 'complete');
+    const tasks = [];
+    if ('serviceWorker' in navigator) {
+      tasks.push(navigator.serviceWorker.getRegistrations().then((entries) =>
+        Promise.all(entries.map((entry) => entry.unregister()))));
+    }
+    if ('caches' in window) {
+      tasks.push(caches.keys().then((keys) =>
+        Promise.all(keys.map((key) => caches.delete(key)))));
+    }
+    await Promise.allSettled(tasks);
+    // Bust the old navigation cache once after unregistering stale workers.
+    const url = new URL(location.href);
+    url.searchParams.set('oj_desktop_cache_repaired', '20261118v2');
+    location.replace(url.toString());
+  } catch (error) {
+    console.warn('OpenJarvis desktop cache repair:', error);
+  }
+})();
+"#;
+
+#[cfg(all(target_os = "windows", feature = "armenian-preview"))]
+fn repair_desktop_ui_cache(
+    webview: &tauri::Webview<tauri::Wry>,
+    payload: &tauri::webview::PageLoadPayload<'_>,
+) {
+    if webview.label() == "main"
+        && matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
+    {
+        if let Err(error) = webview.eval(DESKTOP_UI_CACHE_REPAIR_JS) {
+            eprintln!("OpenJarvis UI cache repair could not execute: {error}");
+        }
+    }
+}
+
+
 /// Small, fast model used when startup needs a default Ollama tag.
 const STARTUP_MODEL: &str = "qwen3.5:4b";
 
@@ -3541,6 +3588,12 @@ pub fn run() {
     let boot_status_ref = status.clone();
 
     tauri::Builder::default()
+        .on_page_load(|webview, payload| {
+            #[cfg(all(target_os = "windows", feature = "armenian-preview"))]
+            repair_desktop_ui_cache(webview, payload);
+            #[cfg(not(all(target_os = "windows", feature = "armenian-preview")))]
+            let _ = (webview, payload);
+        })
         .manage(backend.clone())
         .manage(source_update_gate)
         .manage(colibri::ColibriSetupState::default())
