@@ -59,6 +59,14 @@ def select_request_tool_manifest(
         return full_manifest
     if _EXTERNAL_OR_ACTION.search(text):
         return full_manifest
+    # Greeting-prefixed instructions are mixed-intent turns. Retain the full
+    # manifest rather than guessing from one mathematical verb.
+    if re.match(
+        r"^(?:hello|hi|hey|привет|բարև|բարեւ)\\s*[,，،]",
+        text,
+        re.IGNORECASE,
+    ):
+        return full_manifest
 
     by_name = {
         definition.get("function", {}).get("name"): definition
