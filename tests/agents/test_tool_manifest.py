@@ -27,9 +27,9 @@ def _tools() -> list[dict]:
 @pytest.mark.parametrize(
     "user_input",
     [
-        "Հաշվիր պատվերների շահույթը և ստուգիր բոլոր հնարավոր համադրությունները։",
-        "Calculate each order's profit and prove the best combination.",
-        "Рассчитай прибыль и все возможные комбинации заказов.",
+        "Հաշվիր 5 պատվերների շահույթը և ստուգիր բոլոր հնարավոր համադրությունները։",
+        "Calculate profits for 5 orders and prove the best combination.",
+        "Рассчитай прибыль для 5 заказов и все возможные комбинации.",
     ],
 )
 def test_standalone_arithmetic_advertises_calculator_only(user_input: str):
@@ -55,6 +55,7 @@ def test_standalone_arithmetic_advertises_calculator_only(user_input: str):
         "Հաշվիր իմ ծախսերը՝ ըստ այսօրվա բենզինի գնի ինտերնետում",
         "Use shell_exec to calculate 2+2",
         "Calculate profits from an attached file",
+        "Calculate my profit without any numbers provided",
         "Рассчитай прибыль, проверь систему Windows",
         "Compute 2+2 with calculator and think",
         "What is the weather today?",
