@@ -374,8 +374,7 @@ class TestChatCompletions:
         assert performance["inference_calls"] == 1
         assert performance["tool_calls"] == 0
         assert (
-            performance["agent_wall_seconds"]
-            >= performance["inference_wall_seconds"]
+            performance["agent_wall_seconds"] >= performance["inference_wall_seconds"]
         )
         assert performance["prompt_chars"] > len("Write about computers")
 
