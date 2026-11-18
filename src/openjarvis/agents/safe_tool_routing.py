@@ -100,6 +100,27 @@ def _matches_any(patterns: tuple[str, ...], text: str) -> bool:
     )
 
 
+# Only these standalone social greetings qualify. Anything containing a task,
+# a comma followed by instructions, code, a URL, or additional words stays on
+# normal tool-capable inference. All tools remain registered and available.
+_GREETING_ONLY = re.compile(
+    r"(?:բարև(?: ձեզ)?|բարեւ(?: ձեզ)?|ողջույն|привет|здравствуйте|"
+    r"добрый день|доброе утро|hello|hi|hey)[!?.։՜՚]*",
+    flags=re.IGNORECASE,
+)
+
+
+def is_pure_greeting(user_input: str) -> bool:
+    """Skip unnecessary tool schemas for an exact social greeting only.
+
+    Not a separate Fast Chat mode: the caller still uses Orchestrator, its
+    usual system prompt, stream, security boundaries and loop guard. We omit
+    expensive tool schemas only when there is no requested tool work.
+    """
+    text = " ".join((user_input or "").casefold().strip().split())
+    return bool(_GREETING_ONLY.fullmatch(text))
+
+
 def select_safe_tool_routes(
     user_input: str,
     available_tools: Iterable[str],
@@ -143,4 +164,4 @@ def select_safe_tool_routes(
     return routes
 
 
-__all__ = ["SafeToolRoute", "select_safe_tool_routes"]
+__all__ = ["SafeToolRoute", "select_safe_tool_routes", "is_pure_greeting"]
