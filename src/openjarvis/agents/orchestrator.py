@@ -573,6 +573,7 @@ class OrchestratorAgent(ToolUsingAgent):
             is_pure_greeting,
             select_safe_tool_routes,
         )
+        from openjarvis.agents.tool_manifest import select_request_tool_manifest
 
         deterministic_routes = select_safe_tool_routes(
             input,
@@ -583,6 +584,17 @@ class OrchestratorAgent(ToolUsingAgent):
         # tasks, but avoid passing costly function schemas into hybrid GPU/CPU
         # model prefill for "Բարև" / "hello".
         greeting_only = is_pure_greeting(input)
+        # The agent and executor always retain ALL permitted tools. Only the
+        # per-request advertisement to the local model is compacted for a
+        # clearly self-contained arithmetic task; ambiguity falls back to all.
+        # Prior chat context can change intent, so never prune a follow-up.
+        inference_tools = select_request_tool_manifest(
+            input,
+            openai_tools,
+            has_conversation_context=bool(
+                context is not None and context.conversation.messages
+            ),
+        )
 
         pending_routed_calls = [
             {
@@ -605,8 +617,8 @@ class OrchestratorAgent(ToolUsingAgent):
             # read-only diagnostic(s) requested by the user. The follow-up
             # model turn must summarize those results, not escalate to a
             # broader tool such as shell_exec or repeat extra diagnostics.
-            if openai_tools and not deterministic_routes and not greeting_only:
-                gen_kwargs["tools"] = openai_tools
+            if inference_tools and not deterministic_routes and not greeting_only:
+                gen_kwargs["tools"] = inference_tools
 
             if pending_routed_calls:
                 # Execute explicit, reviewed read-only diagnostics before the
