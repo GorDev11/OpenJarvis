@@ -420,7 +420,7 @@ class OrchestratorAgent(ToolUsingAgent):
                     response_chars >= next_response_guard_check
                     or any(
                         boundary in chunk.content
-                        for boundary in ("\\n", ".", "!", "?", "։")
+                        for boundary in ("\n", ".", "!", "?", "։")
                     )
                 )
                 if self._loop_guard and should_check_response:
