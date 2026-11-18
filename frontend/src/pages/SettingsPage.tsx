@@ -40,6 +40,7 @@ import {
 import { MainSourceUpdate } from '../components/Desktop/MainSourceUpdate';
 import { ColibriSetup } from '../components/Desktop/ColibriSetup';
 import { colibriInferenceSource, isColibriInferenceSource } from '../lib/colibri';
+import { runAssistantSelfTest, type AssistantSelfTestResult } from '../lib/assistant-self-test';
 import {
   isAutoUpdateDisabled,
   isUpdaterBuildDisabled,
@@ -299,6 +300,41 @@ export function SettingsPage() {
   const updateSettings = useAppStore((s) => s.updateSettings);
   const conversations = useAppStore((s) => s.conversations);
   const serverInfo = useAppStore((s) => s.serverInfo);
+  const [selfTestRunning, setSelfTestRunning] = useState(false);
+  const [selfTestPhase, setSelfTestPhase] = useState('');
+  const [selfTestResult, setSelfTestResult] = useState<AssistantSelfTestResult | null>(null);
+  const [selfTestError, setSelfTestError] = useState('');
+
+  const handleAssistantSelfTest = useCallback(async () => {
+    const state = useAppStore.getState();
+    if (state.streamState.isStreaming) {
+      setSelfTestError('Finish or stop your current chat before running the self-test.');
+      return;
+    }
+    setSelfTestRunning(true);
+    setSelfTestPhase('');
+    setSelfTestError('');
+    setSelfTestResult(null);
+    try {
+      const result = await runAssistantSelfTest(state.selectedModel, setSelfTestPhase);
+      setSelfTestResult(result);
+      state.addLogEntry({
+        timestamp: Date.now(), level: 'info', category: 'chat',
+        message: `Orchestrator self-test OK: model=${result.model}, ttft=${result.firstTokenMs}ms, total=${result.totalMs}ms, finish=${result.finishReason}, toolEvents=${result.toolEvents}`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setSelfTestError(message);
+      useAppStore.getState().addLogEntry({
+        timestamp: Date.now(), level: 'error', category: 'chat',
+        message: `Orchestrator self-test failed: ${message}`,
+      });
+    } finally {
+      setSelfTestRunning(false);
+      setSelfTestPhase('');
+    }
+  }, []);
+
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [speechBackendAvailable, setSpeechBackendAvailable] = useState<boolean | null>(null);
   const [ttsBackend, setTtsBackend] = useState<{ available: boolean; backend?: string; voice_id?: string } | null>(null);
@@ -617,6 +653,40 @@ export function SettingsPage() {
                   border: '1px solid var(--color-border)',
                 }}
               />
+            </SettingRow>
+          </Section>
+
+          {/* User-triggered full agent probe: no Fast Chat mode or model swap. */}
+          <Section title="Assistant diagnostics">
+            <SettingRow
+              label="Run Orchestrator self-test"
+              description="Tests an Armenian greeting through the real configured agent, preserving its tools. Measures first-token latency and verifies stream completion; it can take a few minutes."
+            >
+              <div className="flex flex-col items-end gap-1.5 max-w-xs">
+                <button type="button" disabled={selfTestRunning}
+                  onClick={() => void handleAssistantSelfTest()}
+                  className="rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                  style={{ borderColor: 'var(--color-accent)', color: 'var(--color-text)' }}>
+                  {selfTestRunning ? 'Testing Orchestrator…' : 'Run self-test'}
+                </button>
+                {selfTestRunning && (
+                  <span role="status" className="text-xs text-right" style={{ color: 'var(--color-text-secondary)' }}>
+                    {selfTestPhase}
+                  </span>
+                )}
+                {selfTestResult && (
+                  <span role="status" className="text-xs text-right" style={{ color: 'var(--color-success)' }}>
+                    Passed · first token {(selfTestResult.firstTokenMs / 1000).toFixed(1)}s ·
+                    total {(selfTestResult.totalMs / 1000).toFixed(1)}s ·
+                    {selfTestResult.finishReason}
+                  </span>
+                )}
+                {selfTestError && (
+                  <span role="alert" className="text-xs text-right" style={{ color: 'var(--color-error)' }}>
+                    {selfTestError}
+                  </span>
+                )}
+              </div>
             </SettingRow>
           </Section>
 
