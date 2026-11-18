@@ -486,7 +486,11 @@ class OrchestratorAgent(ToolUsingAgent):
         logger.info(
             "Orchestrator inference payload: model=%s messages=%d prompt_chars=%d "
             "tool_count=%d tool_schema_chars=%d",
-            self._model, len(messages), prompt_chars, tool_count, tool_schema_chars,
+            self._model,
+            len(messages),
+            prompt_chars,
+            tool_count,
+            tool_schema_chars,
         )
 
         publishes_events = getattr(self._engine, "_publishes_events", False)
