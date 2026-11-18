@@ -320,7 +320,7 @@ export function SettingsPage() {
       setSelfTestResult(result);
       state.addLogEntry({
         timestamp: Date.now(), level: 'info', category: 'chat',
-        message: `Orchestrator self-test OK: model=${result.model}, ttft=${result.firstTokenMs}ms, total=${result.totalMs}ms, finish=${result.finishReason}, toolEvents=${result.toolEvents}, toolsAvailable=${result.toolCount ?? 'unknown'}, toolSchemaChars=${result.toolSchemaChars ?? 'unknown'}, promptChars=${result.promptChars ?? 'unknown'}`,
+        message: `Orchestrator self-test OK: model=${result.model}, ttft=${result.firstTokenMs}ms, total=${result.totalMs}ms, finish=${result.finishReason}, toolEvents=${result.toolEvents}, toolsSent=${result.toolCount ?? 'unknown'}, toolsAvailable=${result.availableToolCount ?? 'unknown'}, toolSchemaChars=${result.toolSchemaChars ?? 'unknown'}, promptChars=${result.promptChars ?? 'unknown'}`,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -680,7 +680,11 @@ export function SettingsPage() {
                     total {(selfTestResult.totalMs / 1000).toFixed(1)}s ·
                     {selfTestResult.finishReason}
                     {selfTestResult.toolCount !== null && (
-                      <> · {selfTestResult.toolCount} tools · {selfTestResult.toolSchemaChars} schema chars</>
+                      <> · {selfTestResult.toolCount} tools sent
+                        {selfTestResult.availableToolCount !== null
+                          ? ` / ${selfTestResult.availableToolCount} available`
+                          : ''}
+                        · {selfTestResult.toolSchemaChars} schema chars</>
                     )}
                   </span>
                 )}
