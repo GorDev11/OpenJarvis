@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -229,6 +229,39 @@ class TestOrchestratorAgent:
         assert result.content == "Hello world"
         assert result.metadata["total_tokens"] == 6
         engine.generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_streamed_loop_guard_checks_in_batches_and_still_runs_final_check(
+        self,
+    ):
+        engine = MagicMock()
+        engine.engine_id = "mock"
+
+        async def stream_full(*args, **kwargs):  # noqa: ANN002, ANN003
+            for _ in range(300):
+                yield StreamChunk(content="x")
+            yield StreamChunk(finish_reason="stop")
+
+        engine.stream_full = stream_full
+        agent = OrchestratorAgent(engine, "test-model")
+        assert agent._loop_guard is not None
+        chunks: list[str] = []
+        with patch.object(
+            agent._loop_guard,
+            "check_response",
+            wraps=agent._loop_guard.check_response,
+        ) as checked:
+            result = await asyncio.to_thread(
+                agent.run,
+                "Explain the result",
+                stream_callback=chunks.append,
+                stream_event_loop=asyncio.get_running_loop(),
+            )
+
+        assert result.content == "x" * 300
+        assert len(chunks) == 300
+        # About 6 periodic checks plus the mandatory final check, not 300.
+        assert 2 <= checked.call_count <= 12
 
     @pytest.mark.asyncio
     async def test_live_stream_merges_tool_fragments_then_streams_grounded_answer(
