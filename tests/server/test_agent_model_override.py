@@ -128,9 +128,7 @@ class _TunableAgent:
         self.observed = []
 
     def run(self, input_text: str, context=None) -> AgentResult:
-        self.observed.append(
-            (self._model, self._temperature, self._max_tokens)
-        )
+        self.observed.append((self._model, self._temperature, self._max_tokens))
         return AgentResult(content=input_text, turns=1)
 
 
