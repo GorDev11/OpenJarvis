@@ -13,7 +13,15 @@ const apiTarget = process.env.OPENJARVIS_VITE_PROXY_TARGET
   || process.env.VITE_API_URL
   || 'http://localhost:8000';
 
-export default defineConfig({
+// Embedded Tauri releases must never retain an offline service worker from
+// an older Desktop build. Such a worker can keep serving stale index.html and
+// JavaScript even after a valid signed updater reports "Already up to date".
+// In desktop builds VitePWA publishes a one-time self-destroying SW: it
+// unregisters the previous worker and clears only Cache Storage (not
+// localStorage, where user conversations and preferences are kept).
+const embeddedDesktopModes = new Set(['armenian-preview', 'armenian-release']);
+
+export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
@@ -23,6 +31,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      selfDestroying: embeddedDesktopModes.has(mode),
       registerType: 'autoUpdate',
       manifest: {
         name: 'OpenJarvis',
@@ -79,4 +88,4 @@ export default defineConfig({
       '/api': apiTarget,
     },
   },
-});
+}));
