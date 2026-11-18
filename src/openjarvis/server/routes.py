@@ -710,14 +710,22 @@ def _run_agent_result(
             "stream_cancel_event": stream_cancel_event,
         }
 
-    # Override agent model for this request if the caller specified one.
-    # Locked for the full override-run-restore cycle (#759): only the
-    # override/restore lines racing wouldn't be enough, since agent.run()
-    # itself reads self._model throughout the call.
+    # The OpenAI-compatible caller sets max_tokens and temperature for this
+    # request. Server-side agents must honour them just like direct inference.
+    # Swap all tunables under the SAME per-agent lock used for model overrides:
+    # another concurrent request must not inherit these temporary settings.
     with _get_agent_model_lock(agent):
         original_model = agent._model
+        has_temperature = hasattr(agent, "_temperature")
+        has_max_tokens = hasattr(agent, "_max_tokens")
+        original_temperature = getattr(agent, "_temperature", None)
+        original_max_tokens = getattr(agent, "_max_tokens", None)
         if model:
             agent._model = model
+        if has_temperature:
+            agent._temperature = req.temperature
+        if has_max_tokens:
+            agent._max_tokens = req.max_tokens
         try:
             if trace_store is not None:
                 from openjarvis.traces.collector import TraceCollector
@@ -728,6 +736,10 @@ def _run_agent_result(
                 result = agent.run(input_text, context=ctx, **run_kwargs)
         finally:
             agent._model = original_model
+            if has_temperature:
+                agent._temperature = original_temperature
+            if has_max_tokens:
+                agent._max_tokens = original_max_tokens
 
     return result
 
