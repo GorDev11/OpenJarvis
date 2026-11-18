@@ -461,6 +461,37 @@ class TestOrchestratorAgent:
         assert "tools" not in captures[0]
         assert len(agent._tools) == 1
 
+    def test_standalone_math_uses_calculator_without_unloading_other_tools(self):
+        engine = _make_engine_no_tools("24,600 դրամ")
+        agent = OrchestratorAgent(
+            engine,
+            "test-model",
+            tools=[_CalculatorStub(), _ThinkStub(), _StaticToolStub("shell_exec")],
+        )
+        result = agent.run("Հաշվիր 5 պատվերների շահույթը 8 ժամում")
+
+        assert result.content == "24,600 դրամ"
+        offered = engine.generate.call_args.kwargs["tools"]
+        assert [tool["function"]["name"] for tool in offered] == ["calculator"]
+        assert {tool.spec.name for tool in agent._tools} == {
+            "calculator",
+            "think",
+            "shell_exec",
+        }
+
+    def test_followup_math_keeps_full_tool_manifest(self):
+        engine = _make_engine_no_tools()
+        agent = OrchestratorAgent(
+            engine,
+            "test-model",
+            tools=[_CalculatorStub(), _ThinkStub()],
+        )
+        ctx = AgentContext()
+        ctx.conversation.add(Message(role=Role.USER, content="Use both tools"))
+        agent.run("Calculate 2+2", context=ctx)
+
+        assert len(engine.generate.call_args.kwargs["tools"]) == 2
+
     def test_deterministic_network_route_suppresses_extra_model_tools(self):
         engine = _make_engine_no_tools("DNS-ը հասանելի է, gateway-ը՝ 192.168.1.1։")
         network = _StaticToolStub(
