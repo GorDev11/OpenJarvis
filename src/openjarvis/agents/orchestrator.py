@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import time
+from dataclasses import replace
 from typing import Any, Callable, List, Optional
 
 from openjarvis.agents._stubs import (
@@ -33,6 +34,15 @@ from openjarvis.engine._stubs import InferenceEngine
 from openjarvis.tools._stubs import BaseTool
 
 logger = logging.getLogger(__name__)
+
+
+_COMPACT_FACTUAL_PROMPT = (
+    "You are OpenJarvis, a local AI assistant on the user's hardware, not a "
+    "cloud or branded assistant. Answer accurately and concisely in the user's "
+    "language. Do not invent actions, device scans, commands, measurements, "
+    "capabilities or tool results. For device/network checks, use relevant "
+    "tools before reporting findings or clearly state no check was done."
+)
 
 
 @AgentRegistry.register("orchestrator")
@@ -604,7 +614,10 @@ class OrchestratorAgent(ToolUsingAgent):
             is_pure_greeting,
             select_safe_tool_routes,
         )
-        from openjarvis.agents.tool_manifest import select_request_tool_manifest
+        from openjarvis.agents.tool_manifest import (
+            is_standalone_knowledge_question,
+            select_request_tool_manifest,
+        )
 
         deterministic_routes = select_safe_tool_routes(
             input,
@@ -626,6 +639,33 @@ class OrchestratorAgent(ToolUsingAgent):
                 context is not None and context.conversation.messages
             ),
         )
+
+
+        # The Colibri diagnostic measured a stable 710-character stock
+        # identity prompt plus each user question. For a fresh, independent
+        # factual question, keep identity and safety guidance but avoid
+        # repeatedly prefilling the full default template. ONLY compress when
+        # the assembled system message exactly equals the stock default:
+        # custom system prompts, SOUL/MEMORY/USER files, skill instructions,
+        # remembered facts and conversation history are all preserved.
+        if (
+            not deterministic_routes
+            and not greeting_only
+            and len(messages) == 2
+            and messages[0].role == Role.SYSTEM
+            and is_standalone_knowledge_question(
+                input, tool_names=[tool.spec.name for tool in self._tools]
+            )
+        ):
+            from openjarvis.core.config import AgentConfig
+
+            if messages[0].text == AgentConfig().default_system_prompt:
+                messages[0] = replace(
+                    messages[0], content=_COMPACT_FACTUAL_PROMPT
+                )
+                initial_prompt_chars = sum(
+                    len(message.text or "") for message in messages
+                )
 
         pending_routed_calls = [
             {

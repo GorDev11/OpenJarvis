@@ -174,6 +174,69 @@ def _make_engine_multi_tool() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
+
+def test_fresh_factual_question_uses_compact_stock_identity():
+    from openjarvis.core.config import AgentConfig
+
+    engine = _make_engine_no_tools()
+    tools = [_CalculatorStub()]
+    agent = OrchestratorAgent(
+        engine, "test-model", tools=tools,
+        system_prompt=AgentConfig().default_system_prompt,
+    )
+    agent.run("What is I2C serial communication?")
+
+    messages = engine.generate.call_args.args[0]
+    assert [m.role for m in messages] == [Role.SYSTEM, Role.USER]
+    assert "OpenJarvis" in messages[0].text
+    assert "local AI assistant" in messages[0].text
+    assert len(messages[0].text) < len(AgentConfig().default_system_prompt) * 0.6
+    # Registered tools and executor are unchanged.
+    assert len(agent._tools) == 1
+    assert "tools" not in engine.generate.call_args.kwargs
+
+
+def test_factual_question_never_shortens_custom_or_persona_system_prompt():
+    custom = "You are a custom assistant. Always answer using exact terminology."
+    engine = _make_engine_no_tools()
+    agent = OrchestratorAgent(
+        engine, "test-model", tools=[_CalculatorStub()], system_prompt=custom
+    )
+    agent.run("What is I2C serial communication?")
+    messages = engine.generate.call_args.args[0]
+    assert messages[0].text == custom
+
+
+def test_action_request_retains_full_stock_prompt_and_tools():
+    from openjarvis.core.config import AgentConfig
+
+    engine = _make_engine_no_tools()
+    agent = OrchestratorAgent(
+        engine, "test-model", tools=[_CalculatorStub()],
+        system_prompt=AgentConfig().default_system_prompt,
+    )
+    agent.run("Use calculator to calculate 2+2")
+    messages = engine.generate.call_args.args[0]
+    assert messages[0].text == AgentConfig().default_system_prompt
+    assert len(agent._tools) == 1
+    assert "tools" in engine.generate.call_args.kwargs
+
+
+def test_followup_question_keeps_full_stock_prompt():
+    from openjarvis.core.config import AgentConfig
+
+    engine = _make_engine_no_tools()
+    agent = OrchestratorAgent(
+        engine, "test-model", tools=[_CalculatorStub()],
+        system_prompt=AgentConfig().default_system_prompt,
+    )
+    ctx = AgentContext()
+    ctx.conversation.add(Message(role=Role.USER, content="Explain one concept."))
+    agent.run("What is I2C serial communication?", context=ctx)
+    messages = engine.generate.call_args.args[0]
+    assert messages[0].text == AgentConfig().default_system_prompt
+
+
 class TestOrchestratorAgent:
     def test_agent_id(self):
         engine = _make_engine_no_tools()
