@@ -99,6 +99,29 @@ _POSSIBLE_ACTION = re.compile(
 )
 
 
+
+# An explicit user instruction not to call tools applies to this request,
+# even if it is a follow-up. This is a per-turn model-facing decision, never
+# a modification of the registered ToolExecutor or approval policy.
+_NO_TOOLS_DIRECTIVE = re.compile(
+    r"(?<!\w)(?:"
+    r"(?:do\s+not|don't)\s+(?:use|call|invoke)\s+(?:any\s+|external\s+)?tools?"
+    r"|without\s+(?:using\s+)?(?:any\s+|external\s+)?tools?"
+    r"|մի\s+(?:օգտագործիր|կանչիր)\s+(?:արտաքին\s+|որևէ\s+)?գործիք(?:ներ|ները)?"
+    r"|առանց\s+(?:արտաքին\s+)?գործիքների"
+    r"|не\s+(?:используй|вызывай)\s+(?:внешние\s+|никакие\s+)?инструменты"
+    r"|без\s+(?:использования\s+)?(?:внешних\s+)?инструментов"
+    r")(?!\w)",
+    re.IGNORECASE,
+)
+
+
+def has_explicit_no_tools_instruction(user_input: str) -> bool:
+    """Recognize narrow direct RU/EN/AM opt-outs, not generic tool discussion."""
+    text = " ".join((user_input or "").split())
+    return bool(_NO_TOOLS_DIRECTIVE.search(text))
+
+
 def _is_standalone_knowledge_question(
     text: str,
     tools: Sequence[dict[str, Any]],
@@ -142,6 +165,10 @@ def select_request_tool_manifest(
         return full_manifest
 
     text = " ".join((user_input or "").split())
+    # Honor an explicit per-turn user opt-out even in a long conversation.
+    # Registered tools remain available on the next request.
+    if has_explicit_no_tools_instruction(text):
+        return []
     # No tool capability is removed: only the model-facing JSON schema is
     # omitted for a clearly self-contained factual question.
     if _is_standalone_knowledge_question(
@@ -216,4 +243,8 @@ def is_standalone_knowledge_question(
     )
 
 
-__all__ = ["select_request_tool_manifest", "is_standalone_knowledge_question"]
+__all__ = [
+    "select_request_tool_manifest",
+    "is_standalone_knowledge_question",
+    "has_explicit_no_tools_instruction",
+]

@@ -615,13 +615,22 @@ class OrchestratorAgent(ToolUsingAgent):
             select_safe_tool_routes,
         )
         from openjarvis.agents.tool_manifest import (
+            has_explicit_no_tools_instruction,
             is_standalone_knowledge_question,
             select_request_tool_manifest,
         )
 
-        deterministic_routes = select_safe_tool_routes(
-            input,
-            (tool.spec.name for tool in self._tools),
+        # An explicit no-tools instruction also disables deterministic tool
+        # routes for THIS turn. Otherwise a network/system diagnostic could
+        # still execute before the model sees the user's opt-out.
+        explicit_no_tools = has_explicit_no_tools_instruction(input)
+        deterministic_routes = (
+            []
+            if explicit_no_tools
+            else select_safe_tool_routes(
+                input,
+                (tool.spec.name for tool in self._tools),
+            )
         )
         # Pure standalone greetings require no external operations. Keep the
         # Orchestrator and its full registered tool set intact for all actual

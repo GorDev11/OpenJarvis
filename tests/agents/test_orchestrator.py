@@ -242,6 +242,32 @@ def test_followup_question_keeps_full_stock_prompt():
     assert messages[0].text == AgentConfig().default_system_prompt
 
 
+
+def test_explicit_no_tools_followup_retains_executor_without_advertising_tools():
+    engine = _make_engine_no_tools()
+    agent = OrchestratorAgent(
+        engine, "test-model", tools=[_CalculatorStub()]
+    )
+    ctx = AgentContext()
+    ctx.conversation.add(Message(role=Role.USER, content="Explain Zigbee."))
+    result = agent.run(
+        "Compare Zigbee and Wi-Fi. Մի օգտագործիր արտաքին գործիքներ։",
+        context=ctx,
+    )
+    assert result.content == "Final answer."
+    assert len(agent._tools) == 1
+    assert "tools" not in engine.generate.call_args.kwargs
+
+
+def test_explicit_no_tools_blocks_deterministic_action_routing():
+    engine = _make_engine_no_tools()
+    tool = _StaticToolStub("network_diagnostics")
+    agent = OrchestratorAgent(engine, "test-model", tools=[tool])
+    agent.run("Check my network diagnostics. Do not use external tools.")
+    assert tool.calls == 0
+    assert "tools" not in engine.generate.call_args.kwargs
+
+
 class TestOrchestratorAgent:
     def test_agent_id(self):
         engine = _make_engine_no_tools()

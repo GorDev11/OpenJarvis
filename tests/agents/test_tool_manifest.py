@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from openjarvis.agents.tool_manifest import (
+    has_explicit_no_tools_instruction,
     is_standalone_knowledge_question,
     select_request_tool_manifest,
 )
@@ -28,6 +29,62 @@ def test_independent_memory_classifier_guards_tools_and_context():
     assert not is_standalone_knowledge_question(
         "What is my temperature?", tool_names=names
     )
+
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Do not use external tools. Explain how Zigbee mesh works.",
+        "Without using tools, compare MQTT and Zigbee.",
+        "Не используй внешние инструменты. Объясни MQTT.",
+        "Մի օգտագործիր արտաքին գործիքներ։ Բացատրիր Zigbee-ը։",
+        "Առանց արտաքին գործիքների համեմատիր Wi-Fi և Zigbee-ը։",
+    ],
+)
+def test_explicit_no_tools_instruction_prunes_followup_tool_schemas(question: str):
+    original = _tools()
+    assert has_explicit_no_tools_instruction(question)
+    assert select_request_tool_manifest(
+        question, original, has_conversation_context=True
+    ) == []
+    assert len(original) == 6
+
+
+def test_full_long_armenian_planning_prompt_honors_no_tools():
+    original = _tools()
+    question = (
+        "Հաշվի առնելով մեր նախորդ զրույցը Zigbee-ի, Wi-Fi-ի և ESP32-ի մասին՝ "
+        "նախագծիր խելացի տան ամբողջական լոկալ համակարգ, որտեղ կա 20 լույս, "
+        "10 ջերմաստիճանի սենսոր, 5 շարժման սենսոր և 3 խելացի կողպեք։ "
+        "Համեմատիր Zigbee և Wi-Fi տարբերակները, ընտրիր լավագույն համադրությունը, "
+        "բացատրիր MQTT-ի դերը, ներկայացրու համակարգի կառուցվածքը և "
+        "անվտանգության միջոցները։ Վերջում կազմիր իրականացման 5 փուլից "
+        "բաղկացած պլան՝ բացատրելով յուրաքանչյուր որոշման պատճառը։ "
+        "Մի օգտագործիր արտաքին գործիքներ։"
+    )
+    assert len(question) > 240
+    assert select_request_tool_manifest(
+        question, original, has_conversation_context=True
+    ) == []
+
+
+def test_no_tools_opt_out_never_lingers_in_followup():
+    original = _tools()
+    assert select_request_tool_manifest(
+        "Don't use tools; explain MQTT.", original, has_conversation_context=True
+    ) == []
+    assert select_request_tool_manifest(
+        "Check the latest weather online", original, has_conversation_context=True
+    ) == original
+
+
+def test_tool_discussion_is_not_a_no_tools_opt_out():
+    original = _tools()
+    assert not has_explicit_no_tools_instruction("Why should I use tools?")
+    assert select_request_tool_manifest(
+        "Why should I use tools?", original, has_conversation_context=True
+    ) == original
 
 
 def _tools() -> list[dict]:
