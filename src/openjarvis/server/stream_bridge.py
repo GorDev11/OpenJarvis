@@ -355,11 +355,21 @@ class AgentStreamBridge:
                 0,
             )
             total_tokens = agent_result.metadata.get("total_tokens", 0)
-            if total_tokens == 0:
-                # Fallback: estimate from request messages (incl. system) + content
+            performance = agent_result.metadata.get("performance") or {}
+            prompt_estimated = False
+            if not prompt_tokens:
+                # Some upstream streams omit prompt usage but report output
+                # usage. Count the complete agent-built prompt as well as the
+                # HTTP request, which does not contain SOUL/persona/system text.
+                prompt_chars = performance.get("prompt_chars", 0)
+                prompt_tokens = max(
+                    _estimate_prompt_tokens(self._request.messages),
+                    max(0, int(prompt_chars)) // 4,
+                )
+                prompt_estimated = True
+            if not completion_tokens and content:
                 completion_tokens = max(len(content) // 4, 1)
-                prompt_tokens = _estimate_prompt_tokens(self._request.messages)
-                total_tokens = prompt_tokens + completion_tokens
+            total_tokens = prompt_tokens + completion_tokens
 
             final_chunk = ChatCompletionChunk(
                 id=self._chunk_id,
@@ -382,6 +392,12 @@ class AgentStreamBridge:
                     final_data["complexity"] = self._complexity_info.model_dump()
                 else:
                     final_data["complexity"] = self._complexity_info
+            if performance:
+                # Only non-sensitive counts and durations, never raw prompts.
+                final_data["performance"] = {
+                    **performance,
+                    "prompt_tokens_estimated": prompt_estimated,
+                }
             yield f"data: {json.dumps(final_data)}\n\n"
 
             if self._on_complete is not None:

@@ -588,6 +588,18 @@ class OrchestratorAgent(ToolUsingAgent):
         stream_event_loop = kwargs.get("stream_event_loop")
         stream_cancel_event = kwargs.get("stream_cancel_event")
         streamed_tool_preambles = ""
+        first_content_seconds: Optional[float] = None
+        model_first_content_seconds: Optional[float] = None
+
+        def record_stream_content(content: str) -> None:
+            nonlocal first_content_seconds, model_first_content_seconds
+            if content and first_content_seconds is None:
+                now = time.perf_counter()
+                first_content_seconds = round(now - run_started, 3)
+                model_first_content_seconds = round(now - inference_started, 3)
+            if stream_callback is not None:
+                stream_callback(content)
+
         from openjarvis.agents.safe_tool_routing import (
             is_pure_greeting,
             select_safe_tool_routes,
@@ -656,7 +668,7 @@ class OrchestratorAgent(ToolUsingAgent):
                     if stream_callback is not None:
                         result = self._generate_streaming(
                             messages,
-                            stream_callback=stream_callback,
+                            stream_callback=record_stream_content,
                             stream_event_loop=stream_event_loop,
                             stream_cancel_event=stream_cancel_event,
                             **gen_kwargs,
@@ -744,6 +756,8 @@ class OrchestratorAgent(ToolUsingAgent):
                         "inference_calls": inference_calls,
                         "tool_calls": len(all_tool_results),
                         "prompt_chars": initial_prompt_chars,
+                        "first_content_seconds": first_content_seconds,
+                        "model_first_content_seconds": model_first_content_seconds,
                         "advertised_tool_count": (
                             len(inference_tools)
                             if not deterministic_routes and not greeting_only
@@ -908,6 +922,8 @@ class OrchestratorAgent(ToolUsingAgent):
                             "inference_calls": inference_calls,
                             "tool_calls": len(all_tool_results),
                             "prompt_chars": initial_prompt_chars,
+                            "first_content_seconds": first_content_seconds,
+                            "model_first_content_seconds": model_first_content_seconds,
                             "advertised_tool_count": (
                                 len(inference_tools)
                                 if not deterministic_routes and not greeting_only

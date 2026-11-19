@@ -66,6 +66,52 @@ def test_stream_replays_grounded_agent_result_without_second_inference():
     assert agent._model == "configured-model"
 
 
+def test_stream_reports_complete_prompt_estimate_and_latency_breakdown():
+    agent = MagicMock()
+    agent._model = "configured-model"
+    request = ChatCompletionRequest(
+        model="requested-model",
+        messages=[{"role": "user", "content": "What is ESP32?"}],
+        stream=True,
+    )
+
+    def runner(emit_content, _cancel_event):
+        emit_content("Short answer.")
+        return AgentResult(
+            content="Short answer.",
+            metadata={
+                "prompt_tokens": 0,
+                "completion_tokens": 4,
+                "total_tokens": 4,
+                "performance": {
+                    "prompt_chars": 4000,
+                    "first_content_seconds": 2.0,
+                    "model_first_content_seconds": 1.8,
+                    "advertised_tool_count": 0,
+                },
+            },
+        )
+
+    bridge = AgentStreamBridge(
+        agent, EventBus(), request.model, request, runner=runner
+    )
+
+    async def collect_events() -> list[str]:
+        return [event async for event in bridge.stream()]
+
+    payloads = [
+        json.loads(event.removeprefix("data: ").strip())
+        for event in asyncio.run(collect_events())
+        if event.startswith("data: {")
+    ]
+    final = next(event for event in payloads if event.get("usage"))
+    assert final["usage"]["prompt_tokens"] >= 1000
+    assert final["usage"]["completion_tokens"] == 4
+    assert final["performance"]["first_content_seconds"] == 2.0
+    assert final["performance"]["model_first_content_seconds"] == 1.8
+    assert final["performance"]["prompt_tokens_estimated"] is True
+
+
 def test_runner_content_is_live_and_not_duplicated():
     agent = MagicMock()
     agent._model = "configured-model"
