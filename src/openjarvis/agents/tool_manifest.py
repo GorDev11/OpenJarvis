@@ -83,7 +83,7 @@ _CONTEXT_REFERENCE = re.compile(
     r"это|этот|эта|эти|выше|предыдущ\w*)\b"
     # Match Armenian demonstratives as words, not substrings in terms like
     # "սարքերում" (which begins with "սա" but refers to devices).
-    r"|(?<!\\w)(?:սա|դա|այս)(?!\\w)|(?<!\\w)(?:նախորդ|վերևի)",
+    r"|(?<!\w)(?:սա|դա|այս)(?!\w)|(?<!\w)(?:նախորդ|վերևի)",
     re.IGNORECASE,
 )
 _POSSIBLE_ACTION = re.compile(
