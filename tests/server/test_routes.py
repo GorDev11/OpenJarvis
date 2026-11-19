@@ -14,6 +14,12 @@ from openjarvis.core.events import EventBus, EventType  # noqa: E402
 from openjarvis.core.types import Role  # noqa: E402
 from openjarvis.server.app import create_app  # noqa: E402
 
+
+_ZIGBEE_QUESTION = (
+    "Ի՞նչ է Zigbee տեխնոլոգիան, ինչպես է այն աշխատում "
+    "և ինչո՞վ է տարբերվում Wi-Fi-ից խելացի տան սարքերում։"
+)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -106,7 +112,7 @@ class _SpyMemoryService:
     "question",
     [
         "What is ESP32?",
-        "Ի՞նչ է Zigbee տեխնոլոգիան, ինչպես է այն աշխատում և ինչո՞վ է տարբերվում Wi-Fi-ից խելացի տան սարքերում։",
+        _ZIGBEE_QUESTION,
     ],
 )
 def test_orchestrator_fresh_factual_question_skips_auto_memory(question):
