@@ -126,9 +126,6 @@ class IngestResponse(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
-
-
-
 # Chat attachments are ephemeral by design: unlike /ingest/files, this route
 # does not silently index a private attachment in the global knowledge DB.
 # The client supplies the bounded extracted excerpt as chat context.
