@@ -1,10 +1,17 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Square, Paperclip, Search } from 'lucide-react';
+import { Send, Square, Paperclip, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
 import { useTtsStore } from '../../lib/tts';
 import { cancelChat, streamChat, streamResearch } from '../../lib/sse';
 import { fetchSavings, getBase } from '../../lib/api';
+import {
+  CHAT_FILE_ACCEPT,
+  CHAT_MAX_BYTES_PER_FILE,
+  CHAT_MAX_FILES,
+  composeChatContent,
+  uploadChatAttachments,
+} from '../../lib/chat-attachments';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
 import { serializeToolCallArguments } from '../../lib/tool-call';
 import { shouldUseIndexedResearch, shouldUseLiveWebTools } from '../../lib/connected-source-routing';
@@ -15,6 +22,7 @@ import {
 import { MicButton } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
 import type {
+  ChatAttachment,
   ChatMessage,
   MessageTelemetry,
   ResearchSearchTrace,
@@ -83,6 +91,11 @@ function useResearchCorpusSync(enabled: boolean): {
 
 export function InputArea() {
   const [input, setInput] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadBusyRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const chatRequestIdRef = useRef<string | null>(null);
@@ -221,10 +234,42 @@ export function InputArea() {
     resetStream();
   }, [resetStream, cancelActiveChat]);
 
+  const attachFiles = useCallback((files: File[]) => {
+    const candidates = files.filter((file) => {
+      if (file.size > CHAT_MAX_BYTES_PER_FILE) {
+        toast.error(\`\${file.name} is too large (5 MB maximum).\`);
+        return false;
+      }
+      const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+      if (!CHAT_FILE_ACCEPT.split(',').includes(ext)) {
+        toast.error(\`\${file.name}: unsupported file type.\`);
+        return false;
+      }
+      return true;
+    });
+    setPendingFiles((current) => {
+      const added = [...current];
+      for (const file of candidates) {
+        if (added.some((item) =>
+          item.name === file.name &&
+          item.size === file.size &&
+          item.lastModified === file.lastModified
+        )) continue;
+        if (added.length >= CHAT_MAX_FILES) {
+          toast.error(\`You can attach up to \${CHAT_MAX_FILES} files.\`);
+          break;
+        }
+        added.push(file);
+      }
+      return added;
+    });
+  }, []);
+
   const sendMessage = useCallback(async () => {
     const content = input.trim();
-    if (!content || streamState.isStreaming) return;
-    const useResearch = shouldUseIndexedResearch(content, deepResearch);
+    if ((!content && pendingFiles.length === 0) || streamState.isStreaming || uploadBusyRef.current) return;
+    // Deep Research is a separate indexed-source API; files go to Chat.
+    const useResearch = pendingFiles.length === 0 && shouldUseIndexedResearch(content, deepResearch);
     if (deepResearch && shouldUseLiveWebTools(content)) {
       toast.info('Using Browser tools for this external link. Deep Research searches indexed personal data only.');
     }
@@ -233,9 +278,25 @@ export function InputArea() {
       return;
     }
 
+    let attached: ChatAttachment[] = [];
+    if (pendingFiles.length > 0) {
+      uploadBusyRef.current = true;
+      setUploadingFiles(true);
+      try {
+        attached = await uploadChatAttachments(pendingFiles);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'File attachment failed.');
+        return; // Keep the draft and files for retry.
+      } finally {
+        uploadBusyRef.current = false;
+        setUploadingFiles(false);
+      }
+    }
+
     // A new user request always interrupts any remaining assistant audio.
     useTtsStore.getState().stop();
     setInput('');
+    setPendingFiles([]);
 
     let convId = activeId;
     if (!convId) {
@@ -245,7 +306,8 @@ export function InputArea() {
     const userMsg: ChatMessage = {
       id: generateId(),
       role: 'user',
-      content,
+      content: content || 'Analyze the attached files.',
+      attachments: attached.length ? attached : undefined,
       timestamp: Date.now(),
     };
     addMessage(convId, userMsg);
@@ -254,7 +316,7 @@ export function InputArea() {
     const currentMessages = useAppStore.getState().messages;
     const apiMessages = currentMessages.map((m) => ({
       role: m.role,
-      content: m.content,
+      content: composeChatContent(m),
     }));
 
     const assistantMsg: ChatMessage = {
@@ -632,6 +694,7 @@ export function InputArea() {
     }
   }, [
     input,
+    pendingFiles,
     activeId,
     selectedModel,
     streamState.isStreaming,
@@ -653,7 +716,40 @@ export function InputArea() {
   };
 
   return (
-    <div className="px-4 pb-4 pt-2" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
+    <div className="px-4 pb-4 pt-2" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes('Files')) {
+          event.preventDefault();
+          setDragActive(true);
+        }
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDragActive(false);
+        }
+      }}
+      onDrop={(event) => {
+        if (event.dataTransfer.files.length > 0) {
+          event.preventDefault();
+          setDragActive(false);
+          if (!streamState.isStreaming && !uploadingFiles) {
+            attachFiles(Array.from(event.dataTransfer.files));
+          }
+        }
+      }}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={CHAT_FILE_ACCEPT}
+        className="hidden"
+        aria-label="Attach files"
+        onChange={(event) => {
+          attachFiles(Array.from(event.target.files ?? []));
+          event.target.value = '';
+        }}
+      />
       <div className="mb-2 flex flex-col gap-1">
         <div className="flex items-center gap-2">
           <button
@@ -691,6 +787,28 @@ export function InputArea() {
           </div>
         )}
       </div>
+      {pendingFiles.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2" aria-label="Pending attachments">
+          {pendingFiles.map((file, index) => (
+            <span key={`${file.name}-${index}`} className="inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs"
+              style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
+              <Paperclip size={12} />
+              {file.name}
+              <button type="button" title={`Remove ${file.name}`} aria-label={`Remove ${file.name}`}
+                disabled={uploadingFiles}
+                onClick={() => setPendingFiles((items) => items.filter((_, i) => i !== index))}>
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {dragActive && (
+        <div className="mb-2 rounded-xl border border-dashed p-3 text-center text-xs"
+          style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}>
+          Drop files to attach to this conversation
+        </div>
+      )}
       <div
         className="flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
         style={{
@@ -708,8 +826,19 @@ export function InputArea() {
           rows={1}
           className="flex-1 bg-transparent outline-none resize-none text-sm leading-relaxed"
           style={{ color: 'var(--color-text)', maxHeight: '200px' }}
-          disabled={streamState.isStreaming || modelLoading}
+          disabled={streamState.isStreaming || uploadingFiles || modelLoading}
         />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={streamState.isStreaming || uploadingFiles || modelLoading}
+          title="Attach files (PDF, DOCX, TXT, code)"
+          aria-label="Attach files"
+          className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30"
+          style={{ color: 'var(--color-text-secondary)' }}
+        >
+          <Paperclip size={17} />
+        </button>
         {isCurrentChatStreaming ? (
           <button
             onClick={stopStreaming}
@@ -729,15 +858,15 @@ export function InputArea() {
             />
             <button
               onClick={sendMessage}
-              disabled={streamState.isStreaming || !input.trim() || modelLoading || !selectedModel}
+              disabled={streamState.isStreaming || uploadingFiles || (!input.trim() && pendingFiles.length === 0) || modelLoading || !selectedModel}
               title={selectedModel ? 'Send message' : 'Pick a model first (⌘K)'}
               className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
               style={{
-                background: input.trim() ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
-                color: input.trim() ? 'white' : 'var(--color-text-tertiary)',
+                background: (input.trim() || pendingFiles.length) ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
+                color: (input.trim() || pendingFiles.length) ? 'white' : 'var(--color-text-tertiary)',
               }}
             >
-              <Send size={16} />
+              {uploadingFiles ? <span className="text-xs">Reading...</span> : <Send size={16} />}
             </button>
           </div>
         )}

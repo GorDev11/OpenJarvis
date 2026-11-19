@@ -5,7 +5,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, FileText } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { ToolCallCard } from './ToolCallCard';
 import { ResearchTimeline } from './ResearchTimeline';
@@ -131,6 +131,21 @@ export function MessageBubble({ message, isLive = false }: Props) {
           }}
         >
           {message.content}
+          {!!message.attachments?.length && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {message.attachments.map((file, index) => (
+                <span
+                  key={`${file.name}-${index}`}
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs"
+                  style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}
+                  title={file.truncated ? 'Only the first part of this file was read' : file.name}
+                >
+                  <FileText size={12} />
+                  {file.name}{file.truncated ? ' (excerpt)' : ''}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );

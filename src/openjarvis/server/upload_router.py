@@ -127,6 +127,129 @@ class IngestResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+
+
+# Chat attachments are ephemeral by design: unlike /ingest/files, this route
+# does not silently index a private attachment in the global knowledge DB.
+# The client supplies the bounded extracted excerpt as chat context.
+_CHAT_TEXT_EXTENSIONS = {
+    ".txt", ".md", ".markdown", ".csv", ".json", ".jsonl", ".log",
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".htm", ".css",
+    ".xml", ".yaml", ".yml", ".toml", ".ini", ".sql", ".sh",
+    ".bat", ".ps1", ".c", ".cpp", ".h", ".hpp", ".rs", ".go",
+    ".java", ".kt", ".swift", ".rb", ".php",
+}
+_CHAT_DOCUMENT_EXTENSIONS = {".pdf", ".docx"}
+_CHAT_MAX_FILES = 4
+_CHAT_MAX_FILE_BYTES = 5 * 1024 * 1024
+_CHAT_MAX_FILE_CHARS = 7_000
+_CHAT_MAX_TOTAL_CHARS = 18_000
+
+
+class ChatAttachment(BaseModel):
+    name: str
+    size: int
+    text: str
+    truncated: bool
+
+
+class ChatAttachmentsResponse(BaseModel):
+    files: list[ChatAttachment]
+
+
+@router.post("/chat-files", response_model=ChatAttachmentsResponse)
+async def parse_chat_attachments(
+    files: List[UploadFile] = File(...),
+) -> ChatAttachmentsResponse:
+    """Parse small files for the current chat without persisting raw uploads.
+
+    Supports source code/text natively and reuses existing PDF/DOCX parsers.
+    Size and excerpt budgets keep an RTX 3060 hybrid-model prompt bounded.
+    """
+    import asyncio
+    from pathlib import PurePosixPath
+
+    if len(files) > _CHAT_MAX_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Attach at most {_CHAT_MAX_FILES} files per message.",
+        )
+
+    processed: list[ChatAttachment] = []
+    total_chars = 0
+
+    for uploaded in files:
+        # Never trust client-provided paths or MIME headers.
+        name = PurePosixPath((uploaded.filename or "untitled").replace("\\", "/")).name
+        ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+        if ext not in _CHAT_TEXT_EXTENSIONS | _CHAT_DOCUMENT_EXTENSIONS:
+            raise HTTPException(
+                status_code=415,
+                detail=f"File type {ext or '(none)'} is not supported in Chat yet.",
+            )
+
+        data = await uploaded.read(_CHAT_MAX_FILE_BYTES + 1)
+        await uploaded.close()
+        if len(data) > _CHAT_MAX_FILE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"{name} exceeds the 5 MB attachment limit.",
+            )
+        if not data:
+            raise HTTPException(status_code=422, detail=f"{name} is empty.")
+
+        try:
+            if ext == ".pdf":
+                extracted = await asyncio.to_thread(_extract_text_from_pdf, data)
+            elif ext == ".docx":
+                extracted = await asyncio.to_thread(_extract_text_from_docx, data)
+            else:
+                # UTF-8 is the expected encoding for code and text attachments.
+                # The BOM-aware decoder also accepts Windows-saved UTF-8 files.
+                extracted = data.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{name} is not UTF-8 text.",
+            ) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("Chat attachment extraction failed (%s): %s", name, exc)
+            raise HTTPException(
+                status_code=422,
+                detail=f"Could not extract text from {name}.",
+            ) from exc
+
+        extracted = extracted.strip()
+        if not extracted:
+            raise HTTPException(
+                status_code=422,
+                detail=f"No selectable text found in {name}; scanned PDFs require OCR.",
+            )
+        available = min(
+            _CHAT_MAX_FILE_CHARS,
+            _CHAT_MAX_TOTAL_CHARS - total_chars,
+        )
+        if available <= 0:
+            raise HTTPException(
+                status_code=413,
+                detail="Combined attachment text is too large for one message.",
+            )
+        snippet = extracted[:available]
+        processed.append(
+            ChatAttachment(
+                name=name,
+                size=len(data),
+                text=snippet,
+                truncated=len(extracted) > len(snippet),
+            )
+        )
+        total_chars += len(snippet)
+
+    return ChatAttachmentsResponse(files=processed)
+
+
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest_paste(body: PasteRequest) -> IngestResponse:
     """Ingest pasted text into the knowledge store."""

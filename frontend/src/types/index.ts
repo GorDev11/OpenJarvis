@@ -123,7 +123,16 @@ export interface LiveEnergyMetrics {
   duration_s: number;
 }
 
+export interface ChatAttachment {
+  name: string;
+  size: number;
+  // Only a bounded text excerpt is stored with the local conversation.
+  text: string;
+  truncated: boolean;
+}
+
 export interface ChatMessage {
+  attachments?: ChatAttachment[];
   id: string;
   role: 'user' | 'assistant';
   content: string;
