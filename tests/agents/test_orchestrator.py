@@ -242,12 +242,9 @@ def test_followup_question_keeps_full_stock_prompt():
     assert messages[0].text == AgentConfig().default_system_prompt
 
 
-
 def test_explicit_no_tools_followup_retains_executor_without_advertising_tools():
     engine = _make_engine_no_tools()
-    agent = OrchestratorAgent(
-        engine, "test-model", tools=[_CalculatorStub()]
-    )
+    agent = OrchestratorAgent(engine, "test-model", tools=[_CalculatorStub()])
     ctx = AgentContext()
     ctx.conversation.add(Message(role=Role.USER, content="Explain Zigbee."))
     result = agent.run(

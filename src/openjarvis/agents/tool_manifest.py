@@ -99,7 +99,6 @@ _POSSIBLE_ACTION = re.compile(
 )
 
 
-
 # An explicit user instruction not to call tools applies to this request,
 # even if it is a follow-up. This is a per-turn model-facing decision, never
 # a modification of the registered ToolExecutor or approval policy.
