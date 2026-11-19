@@ -30,6 +30,7 @@ def test_independent_memory_classifier_guards_tools_and_context():
         "What is my temperature?", tool_names=names
     )
 
+
 @pytest.mark.parametrize(
     "question",
     [
