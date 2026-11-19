@@ -237,12 +237,12 @@ export function InputArea() {
   const attachFiles = useCallback((files: File[]) => {
     const candidates = files.filter((file) => {
       if (file.size > CHAT_MAX_BYTES_PER_FILE) {
-        toast.error(\`\${file.name} is too large (5 MB maximum).\`);
+        toast.error(`${file.name} is too large (5 MB maximum).`);
         return false;
       }
       const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
       if (!CHAT_FILE_ACCEPT.split(',').includes(ext)) {
-        toast.error(\`\${file.name}: unsupported file type.\`);
+        toast.error(`${file.name}: unsupported file type.`);
         return false;
       }
       return true;
@@ -256,7 +256,7 @@ export function InputArea() {
           item.lastModified === file.lastModified
         )) continue;
         if (added.length >= CHAT_MAX_FILES) {
-          toast.error(\`You can attach up to \${CHAT_MAX_FILES} files.\`);
+          toast.error(`You can attach up to ${CHAT_MAX_FILES} files.`);
           break;
         }
         added.push(file);
