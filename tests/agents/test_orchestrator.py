@@ -174,14 +174,15 @@ def _make_engine_multi_tool() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-
 def test_fresh_factual_question_uses_compact_stock_identity():
     from openjarvis.core.config import AgentConfig
 
     engine = _make_engine_no_tools()
     tools = [_CalculatorStub()]
     agent = OrchestratorAgent(
-        engine, "test-model", tools=tools,
+        engine,
+        "test-model",
+        tools=tools,
         system_prompt=AgentConfig().default_system_prompt,
     )
     agent.run("What is I2C serial communication?")
@@ -212,7 +213,9 @@ def test_action_request_retains_full_stock_prompt_and_tools():
 
     engine = _make_engine_no_tools()
     agent = OrchestratorAgent(
-        engine, "test-model", tools=[_CalculatorStub()],
+        engine,
+        "test-model",
+        tools=[_CalculatorStub()],
         system_prompt=AgentConfig().default_system_prompt,
     )
     agent.run("Use calculator to calculate 2+2")
@@ -227,7 +230,9 @@ def test_followup_question_keeps_full_stock_prompt():
 
     engine = _make_engine_no_tools()
     agent = OrchestratorAgent(
-        engine, "test-model", tools=[_CalculatorStub()],
+        engine,
+        "test-model",
+        tools=[_CalculatorStub()],
         system_prompt=AgentConfig().default_system_prompt,
     )
     ctx = AgentContext()

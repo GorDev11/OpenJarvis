@@ -640,7 +640,6 @@ class OrchestratorAgent(ToolUsingAgent):
             ),
         )
 
-
         # The Colibri diagnostic measured a stable 710-character stock
         # identity prompt plus each user question. For a fresh, independent
         # factual question, keep identity and safety guidance but avoid
@@ -660,9 +659,7 @@ class OrchestratorAgent(ToolUsingAgent):
             from openjarvis.core.config import AgentConfig
 
             if messages[0].text == AgentConfig().default_system_prompt:
-                messages[0] = replace(
-                    messages[0], content=_COMPACT_FACTUAL_PROMPT
-                )
+                messages[0] = replace(messages[0], content=_COMPACT_FACTUAL_PROMPT)
                 initial_prompt_chars = sum(
                     len(message.text or "") for message in messages
                 )
