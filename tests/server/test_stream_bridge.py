@@ -92,9 +92,7 @@ def test_stream_reports_complete_prompt_estimate_and_latency_breakdown():
             },
         )
 
-    bridge = AgentStreamBridge(
-        agent, EventBus(), request.model, request, runner=runner
-    )
+    bridge = AgentStreamBridge(agent, EventBus(), request.model, request, runner=runner)
 
     async def collect_events() -> list[str]:
         return [event async for event in bridge.stream()]
