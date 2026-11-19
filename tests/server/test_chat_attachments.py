@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 
 from openjarvis.server.upload_router import router
 
-
 client = TestClient(FastAPI())
 client.app.include_router(router)
 
@@ -31,7 +30,9 @@ def test_upload_python_file_for_chat_without_persisting(monkeypatch):
 def test_chat_upload_disallows_executable_binary():
     response = client.post(
         "/v1/connectors/upload/chat-files",
-        files=[("files", ("app.exe", b"not-an-executable", "application/octet-stream"))],
+        files=[
+            ("files", ("app.exe", b"not-an-executable", "application/octet-stream"))
+        ],
     )
     assert response.status_code == 415
 
