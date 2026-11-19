@@ -14,6 +14,12 @@ def test_independent_memory_classifier_guards_tools_and_context():
     names = ["shell_exec", "web_search"]
     assert is_standalone_knowledge_question("esp 32 ?", tool_names=names)
     assert is_standalone_knowledge_question("Ի՞նչ է MQTT-ն", tool_names=names)
+    assert is_standalone_knowledge_question(
+        "Ի՞նչ է Zigbee տեխնոլոգիան, ինչպես է այն աշխատում և ինչո՞վ է տարբերվում Wi-Fi-ից խելացի տան սարքերում։", tool_names=names
+    )
+    assert not is_standalone_knowledge_question(
+        "Ի՞նչ է սա։", tool_names=names
+    )
     assert not is_standalone_knowledge_question(
         "What is ESP32?", tool_names=names, has_conversation_context=True
     )
@@ -55,6 +61,7 @@ def _tools() -> list[dict]:
         "Ի՞նչ է ESP32-ը",
         "Բացատրիր MQTT-ն",
         "Ինչպես է աշխատում ESP32-ը",
+        "Ի՞նչ է Zigbee տեխնոլոգիան, ինչպես է այն աշխատում և ինչո՞վ է տարբերվում Wi-Fi-ից խելացի տան սարքերում։",
     ],
 )
 def test_standalone_knowledge_skips_tool_schema_prefill(question: str):
@@ -77,6 +84,7 @@ def test_standalone_knowledge_skips_tool_schema_prefill(question: str):
         "Open the ESP32 documentation and explain it",
         "Explain how to install ESP32 drivers",
         "Բացատրիր իմ ֆայլը",
+        "Ի՞նչ է սա։",
         "Что такое цена ESP32 сегодня?",
         "esp 32 ? please search online",
         "Create file?",

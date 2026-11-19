@@ -81,7 +81,9 @@ _LIVE_OR_PERSONAL_DATA = re.compile(
 _CONTEXT_REFERENCE = re.compile(
     r"\b(?:this|that|these|those|it|above|previous|same|"
     r"это|этот|эта|эти|выше|предыдущ\w*)\b"
-    r"|(?:սա|դա|այս|նախորդ|վերևի)",
+    # Match Armenian demonstratives as words, not substrings in terms like
+    # "սարքերում" (which begins with "սա" but refers to devices).
+    r"|(?<!\\w)(?:սա|դա|այս)(?!\\w)|(?<!\\w)(?:նախորդ|վերևի)",
     re.IGNORECASE,
 )
 _POSSIBLE_ACTION = re.compile(

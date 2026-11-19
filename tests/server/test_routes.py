@@ -102,7 +102,14 @@ class _SpyMemoryService:
         pass
 
 
-def test_orchestrator_fresh_factual_question_skips_auto_memory():
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What is ESP32?",
+        "Ի՞նչ է Zigbee տեխնոլոգիան, ինչպես է այն աշխատում և ինչո՞վ է տարբերվում Wi-Fi-ից խելացի տան սարքերում։",
+    ],
+)
+def test_orchestrator_fresh_factual_question_skips_auto_memory(question):
     agent = _make_agent()
     agent.agent_id = "orchestrator"
     tool = MagicMock()
@@ -123,7 +130,7 @@ def test_orchestrator_fresh_factual_question_skips_auto_memory():
         "/v1/chat/completions",
         json={
             "model": "test-model",
-            "messages": [{"role": "user", "content": "What is ESP32?"}],
+            "messages": [{"role": "user", "content": question}],
         },
     )
     assert response.status_code == 200
