@@ -1,7 +1,8 @@
 """Conservative per-request tool manifest selection for local Orchestrator inference.
 
 Registered tools and the ToolExecutor are NEVER changed. On a narrowly
-recognized standalone knowledge question or arithmetic expression, advertising only calculator avoids
+recognized standalone knowledge question or arithmetic expression, only the
+necessary schemas are advertised. This avoids
 unnecessary function-schema prefill on CPU/GPU hybrid models. A fully
 self-contained optimization problem needs model reasoning rather than an
 external action, so it can omit schemas for that turn. Any ambiguous,
