@@ -107,6 +107,7 @@ _ZIGBEE_QUESTION = (
     "և ինչո՞վ է տարբերվում Wi-Fi-ից խելացի տան սարքերում։"
 )
 
+
 @pytest.mark.parametrize(
     "question",
     [
