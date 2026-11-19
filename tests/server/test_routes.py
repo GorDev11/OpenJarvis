@@ -102,6 +102,66 @@ class _SpyMemoryService:
         pass
 
 
+def test_orchestrator_fresh_factual_question_skips_auto_memory():
+    agent = _make_agent()
+    agent.agent_id = "orchestrator"
+    tool = MagicMock()
+    tool.spec.name = "shell_exec"
+    agent._tools = [tool]
+    memory = MagicMock()
+    memory.list_facts.return_value = []
+    cfg = _test_config()
+    cfg.agent.context_from_memory = True
+    app = create_app(
+        _make_engine(), "test-model", agent=agent,
+        config=cfg, memory_service=memory,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "What is ESP32?"}],
+        },
+    )
+    assert response.status_code == 200
+    agent.run.assert_called_once()
+    memory.list_facts.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "messages",
+    [
+        [{"role": "user", "content": "What is my favorite color?"}],
+        [{"role": "user", "content": "What is shell_exec?"}],
+        [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello"},
+            {"role": "user", "content": "What is ESP32?"},
+        ],
+    ],
+)
+def test_orchestrator_personal_tool_followups_keep_memory(messages):
+    agent = _make_agent()
+    agent.agent_id = "orchestrator"
+    tool = MagicMock()
+    tool.spec.name = "shell_exec"
+    agent._tools = [tool]
+    memory = MagicMock()
+    memory.list_facts.return_value = []
+    cfg = _test_config()
+    cfg.agent.context_from_memory = True
+    app = create_app(
+        _make_engine(), "test-model", agent=agent,
+        config=cfg, memory_service=memory,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={"model": "test-model", "messages": messages},
+    )
+    assert response.status_code == 200
+    memory.list_facts.assert_called_once()
+
+
 class TestMemoryServiceWiring:
     def test_non_streaming_completion_feeds_memory(self):
         engine = _make_engine(content="remembered reply")

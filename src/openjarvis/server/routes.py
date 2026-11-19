@@ -246,12 +246,36 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         and (not request_body.stream or bool(getattr(agent, "_tools", None)))
     )
 
+    # Fresh, standalone factual questions do not need potentially expensive
+    # automatic memory retrieval or unrelated remembered facts in the prompt.
+    # All other requests retain memory, and persona/tool permissions remain.
+    skip_automatic_memory = False
+    if (
+        use_server_agent
+        and getattr(agent, "agent_id", None) == "orchestrator"
+        and len(request_body.messages) == 1
+        and request_body.messages[0].role == "user"
+    ):
+        from openjarvis.agents.safe_tool_routing import is_pure_greeting
+        from openjarvis.agents.tool_manifest import (
+            is_standalone_knowledge_question,
+        )
+
+        question = request_body.messages[0].content
+        names = tuple(tool.spec.name for tool in agent._tools)
+        skip_automatic_memory = is_pure_greeting(
+            question
+        ) or is_standalone_knowledge_question(
+            question, tool_names=names
+        )
+
     # Inject memory context into messages before dispatching
     config = getattr(request.app.state, "config", None)
     memory_backend = getattr(request.app.state, "memory_backend", None)
     if (
         config is not None
         and config.agent.context_from_memory
+        and not skip_automatic_memory
         and request_body.messages
     ):
         try:

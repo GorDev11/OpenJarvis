@@ -200,4 +200,18 @@ def select_request_tool_manifest(
     return [calculator]
 
 
-__all__ = ["select_request_tool_manifest"]
+def is_standalone_knowledge_question(
+    user_input: str,
+    *,
+    tool_names: Sequence[str] = (),
+    has_conversation_context: bool = False,
+) -> bool:
+    """Expose the same conservative factual classifier to the API layer."""
+    text = " ".join((user_input or "").split())
+    names = [{"function": {"name": name}} for name in tool_names]
+    return _is_standalone_knowledge_question(
+        text, names, has_conversation_context=has_conversation_context
+    )
+
+
+__all__ = ["select_request_tool_manifest", "is_standalone_knowledge_question"]
