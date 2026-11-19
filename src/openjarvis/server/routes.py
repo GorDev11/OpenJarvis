@@ -265,9 +265,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         names = tuple(tool.spec.name for tool in agent._tools)
         skip_automatic_memory = is_pure_greeting(
             question
-        ) or is_standalone_knowledge_question(
-            question, tool_names=names
-        )
+        ) or is_standalone_knowledge_question(question, tool_names=names)
 
     # Inject memory context into messages before dispatching
     config = getattr(request.app.state, "config", None)

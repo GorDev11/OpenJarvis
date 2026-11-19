@@ -17,9 +17,7 @@ def test_independent_memory_classifier_guards_tools_and_context():
     assert not is_standalone_knowledge_question(
         "What is ESP32?", tool_names=names, has_conversation_context=True
     )
-    assert not is_standalone_knowledge_question(
-        "What is shell_exec?", tool_names=names
-    )
+    assert not is_standalone_knowledge_question("What is shell_exec?", tool_names=names)
     assert not is_standalone_knowledge_question(
         "What is my temperature?", tool_names=names
     )

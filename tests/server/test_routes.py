@@ -113,8 +113,11 @@ def test_orchestrator_fresh_factual_question_skips_auto_memory():
     cfg = _test_config()
     cfg.agent.context_from_memory = True
     app = create_app(
-        _make_engine(), "test-model", agent=agent,
-        config=cfg, memory_service=memory,
+        _make_engine(),
+        "test-model",
+        agent=agent,
+        config=cfg,
+        memory_service=memory,
     )
     response = TestClient(app).post(
         "/v1/chat/completions",
@@ -151,8 +154,11 @@ def test_orchestrator_personal_tool_followups_keep_memory(messages):
     cfg = _test_config()
     cfg.agent.context_from_memory = True
     app = create_app(
-        _make_engine(), "test-model", agent=agent,
-        config=cfg, memory_service=memory,
+        _make_engine(),
+        "test-model",
+        agent=agent,
+        config=cfg,
+        memory_service=memory,
     )
     response = TestClient(app).post(
         "/v1/chat/completions",
