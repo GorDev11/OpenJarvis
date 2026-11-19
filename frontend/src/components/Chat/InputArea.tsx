@@ -282,6 +282,7 @@ export function InputArea() {
     let usage: TokenUsage | undefined;
     let complexity: { score: number; tier: string; suggested_max_tokens: number } | undefined;
     let routedEngine: string | undefined;
+    let serverPerformance: Record<string, unknown> | undefined;
     const toolCalls: ToolCallInfo[] = [];
     const researchTraces: ResearchSearchTrace[] = [];
     const researchSourcesByRef = new Map<number, ResearchSource>();
@@ -491,6 +492,9 @@ export function InputArea() {
             const delta = data.choices?.[0]?.delta;
             if (data.usage) usage = data.usage;
             if (data.complexity) complexity = data.complexity;
+            if (data.performance && typeof data.performance === 'object') {
+              serverPerformance = data.performance;
+            }
             routedEngine = engineFromCompletionChunk(data) ?? routedEngine;
             if (delta?.content) {
               if (!ttftMs) ttftMs = Date.now() - startTime;
@@ -548,13 +552,30 @@ export function InputArea() {
         selectedModel,
         selectedOwner,
       });
+      const perfNumber = (key: string): number | undefined => {
+        const value = serverPerformance?.[key];
+        return typeof value === 'number' ? value : undefined;
+      };
+      const perfMs = (key: string): number | undefined => {
+        const value = perfNumber(key);
+        return value == null ? undefined : value * 1000;
+      };
+      const generationMs = ttftMs == null ? totalMs : Math.max(1, totalMs - ttftMs);
       const telemetry: MessageTelemetry = {
         engine: engineLabel,
         model_id: selectedModel,
         total_ms: totalMs,
         ttft_ms: ttftMs,
+        agent_first_content_ms: perfMs('first_content_seconds'),
+        model_first_content_ms: perfMs('model_first_content_seconds'),
+        agent_total_ms: perfMs('agent_wall_seconds'),
+        inference_total_ms: perfMs('inference_wall_seconds'),
+        prompt_chars: perfNumber('prompt_chars'),
+        advertised_tool_count: perfNumber('advertised_tool_count'),
+        registered_tool_count: perfNumber('registered_tool_count'),
+        prompt_tokens_estimated: serverPerformance?.prompt_tokens_estimated === true,
         tokens_per_sec: usage?.completion_tokens
-          ? usage.completion_tokens / (totalMs / 1000)
+          ? usage.completion_tokens / (generationMs / 1000)
           : undefined,
         complexity_score: complexity?.score,
         complexity_tier: complexity?.tier,

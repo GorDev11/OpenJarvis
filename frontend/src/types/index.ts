@@ -56,6 +56,14 @@ export interface MessageTelemetry {
   tokens_per_sec?: number;
   ttft_ms?: number;
   total_ms?: number;
+  agent_first_content_ms?: number;
+  model_first_content_ms?: number;
+  agent_total_ms?: number;
+  inference_total_ms?: number;
+  prompt_chars?: number;
+  advertised_tool_count?: number;
+  registered_tool_count?: number;
+  prompt_tokens_estimated?: boolean;
   complexity_score?: number;
   complexity_tier?: string;
   suggested_max_tokens?: number;

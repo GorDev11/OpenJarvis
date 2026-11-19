@@ -28,7 +28,7 @@ export function XRayFooter({ usage, telemetry, isResearch = false }: Props) {
   if (telemetry?.complexity_tier) parts.push(telemetry.complexity_tier);
   if (telemetry?.total_ms) parts.push(formatMs(telemetry.total_ms));
   if (usage && (usage.prompt_tokens || usage.completion_tokens)) {
-    parts.push(`${usage.prompt_tokens} input tokens`);
+    parts.push(`${telemetry?.prompt_tokens_estimated ? "~" : ""}${usage.prompt_tokens} input tokens`);
     parts.push(`${usage.completion_tokens} output tokens`);
   }
 
@@ -46,7 +46,7 @@ export function XRayFooter({ usage, telemetry, isResearch = false }: Props) {
     rows.push({ label: 'Engine', value: `${telemetry.engine}${modelDetail ? ` (${modelDetail})` : ''}` });
   }
   if (usage) {
-    const tokenParts = [`${usage.completion_tokens} generated`, `${usage.prompt_tokens} prompt`];
+    const tokenParts = [`${usage.completion_tokens} generated`, `${telemetry?.prompt_tokens_estimated ? "~" : ""}${usage.prompt_tokens} prompt`];
     // Estimate thinking tokens: if total generated >> visible output, the
     // difference is internal reasoning (e.g. Qwen3.5 thinking mode).
     if (telemetry?.tokens_per_sec && telemetry.total_ms && usage.completion_tokens > 50) {
@@ -59,6 +59,37 @@ export function XRayFooter({ usage, telemetry, isResearch = false }: Props) {
       }
     }
     rows.push({ label: 'Tokens', value: tokenParts.join(' \u00B7 ') });
+  }
+  if (telemetry?.prompt_chars != null) {
+    rows.push({ label: 'Full prompt', value: `${telemetry.prompt_chars} chars` });
+  }
+  if (telemetry?.advertised_tool_count != null) {
+    rows.push({
+      label: 'Tools sent',
+      value: `${telemetry.advertised_tool_count} / ${telemetry.registered_tool_count ?? '?'}`,
+    });
+  }
+  if (telemetry?.agent_first_content_ms != null) {
+    rows.push({
+      label: 'Agent TTFT',
+      value: formatMs(telemetry.agent_first_content_ms),
+    });
+  }
+  if (telemetry?.model_first_content_ms != null) {
+    rows.push({
+      label: 'Model TTFT',
+      value: formatMs(telemetry.model_first_content_ms),
+    });
+  }
+  if (telemetry?.inference_total_ms != null) {
+    rows.push({
+      label: 'Inference', value: formatMs(telemetry.inference_total_ms),
+    });
+  }
+  if (telemetry?.agent_total_ms != null) {
+    rows.push({
+      label: 'Agent total', value: formatMs(telemetry.agent_total_ms),
+    });
   }
   if (telemetry?.complexity_tier) {
     rows.push({
