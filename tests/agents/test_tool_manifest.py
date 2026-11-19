@@ -24,7 +24,6 @@ def _tools() -> list[dict]:
     ]
 
 
-
 @pytest.mark.parametrize(
     "question",
     [
@@ -80,9 +79,7 @@ def test_dynamic_personal_or_action_requests_keep_full_manifest(question: str):
 def test_follow_up_knowledge_keeps_tools_when_context_present(question: str):
     original = _tools()
     assert (
-        select_request_tool_manifest(
-            question, original, has_conversation_context=True
-        )
+        select_request_tool_manifest(question, original, has_conversation_context=True)
         == original
     )
 

@@ -49,7 +49,6 @@ _EXTERNAL_OR_ACTION = re.compile(
 )
 
 
-
 # An independent factual question may omit expensive model-facing tool schemas
 # while keeping the SAME Orchestrator and all registered tools/permissions.
 # Ambiguity, conversation context, external data or actions keep the full list.
