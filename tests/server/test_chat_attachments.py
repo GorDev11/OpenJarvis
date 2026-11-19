@@ -13,9 +13,7 @@ def test_upload_python_file_for_chat_without_persisting(monkeypatch):
     def fail_if_called():
         raise AssertionError("Chat attachment must not open KnowledgeStore")
 
-    monkeypatch.setattr(
-        "openjarvis.server.upload_router._get_store", fail_if_called
-    )
+    monkeypatch.setattr("openjarvis.server.upload_router._get_store", fail_if_called)
     response = client.post(
         "/v1/connectors/upload/chat-files",
         files=[("files", ("example.py", b"print('hello')\n", "text/plain"))],
