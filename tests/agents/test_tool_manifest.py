@@ -9,7 +9,6 @@ from openjarvis.agents.tool_manifest import (
     select_request_tool_manifest,
 )
 
-
 _ZIGBEE_QUESTION = (
     "Ի՞նչ է Zigbee տեխնոլոգիան, ինչպես է այն աշխատում "
     "և ինչո՞վ է տարբերվում Wi-Fi-ից խելացի տան սարքերում։"
@@ -20,12 +19,8 @@ def test_independent_memory_classifier_guards_tools_and_context():
     names = ["shell_exec", "web_search"]
     assert is_standalone_knowledge_question("esp 32 ?", tool_names=names)
     assert is_standalone_knowledge_question("Ի՞նչ է MQTT-ն", tool_names=names)
-    assert is_standalone_knowledge_question(
-        _ZIGBEE_QUESTION, tool_names=names
-    )
-    assert not is_standalone_knowledge_question(
-        "Ի՞նչ է սա։", tool_names=names
-    )
+    assert is_standalone_knowledge_question(_ZIGBEE_QUESTION, tool_names=names)
+    assert not is_standalone_knowledge_question("Ի՞նչ է սա։", tool_names=names)
     assert not is_standalone_knowledge_question(
         "What is ESP32?", tool_names=names, has_conversation_context=True
     )
