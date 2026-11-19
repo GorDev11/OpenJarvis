@@ -24,6 +24,75 @@ def _tools() -> list[dict]:
     ]
 
 
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "esp 32 ?",
+        "ESP32?",
+        "MQTT?",
+        "What is ESP32?",
+        "Tell me about ESP32",
+        "Explain MQTT",
+        "How does a transistor work?",
+        "Что такое ESP32?",
+        "Объясни MQTT",
+        "Ի՞նչ է ESP32-ը",
+        "Բացատրիր MQTT-ն",
+        "Ինչպես է աշխատում ESP32-ը",
+    ],
+)
+def test_standalone_knowledge_skips_tool_schema_prefill(question: str):
+    original = _tools()
+    assert select_request_tool_manifest(question, original) == []
+    assert len(original) == 6  # Orchestrator's capabilities remain installed.
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What is the weather in Yerevan today?",
+        "What is the latest ESP32 firmware release?",
+        "Tell me about my downloaded files",
+        "What is the current price of an ESP32?",
+        "What is shell_exec?",
+        "What is system_diagnostics?",
+        "Tell me about the previous answer",
+        "What is this?",
+        "Open the ESP32 documentation and explain it",
+        "Explain how to install ESP32 drivers",
+        "Բացատրիր իմ ֆայլը",
+        "Что такое цена ESP32 сегодня?",
+        "esp 32 ? please search online",
+        "Create file?",
+        "Send money?",
+    ],
+)
+def test_dynamic_personal_or_action_requests_keep_full_manifest(question: str):
+    original = _tools()
+    assert select_request_tool_manifest(question, original) == original
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["esp 32 ?", "What is ESP32?", "Ի՞նչ է ESP32-ը"],
+)
+def test_follow_up_knowledge_keeps_tools_when_context_present(question: str):
+    original = _tools()
+    assert (
+        select_request_tool_manifest(
+            question, original, has_conversation_context=True
+        )
+        == original
+    )
+
+
+def test_standalone_knowledge_works_without_calculator():
+    original = [t for t in _tools() if t["function"]["name"] != "calculator"]
+    assert select_request_tool_manifest("esp 32 ?", original) == []
+    assert len(original) == 5
+
+
 @pytest.mark.parametrize(
     "user_input",
     [
