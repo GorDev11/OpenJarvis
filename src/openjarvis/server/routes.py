@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import logging
 import threading
 import time
@@ -109,6 +111,37 @@ async def cancel_chat_completion(request_id: str, request: Request):
     return {"status": registry.cancel(request_id)}
 
 
+
+def _validated_chat_images(images: list[str] | None) -> list[str] | None:
+    """Validate bounded PNG/JPEG data URIs; pass only base64 to the model."""
+    if not images:
+        return None
+    if len(images) > 1:
+        raise HTTPException(status_code=422, detail="One image per chat message is supported.")
+    value = images[0]
+    if not isinstance(value, str) or len(value) > 620_000:
+        raise HTTPException(status_code=413, detail="Image payload is too large.")
+    if value.startswith("data:image/jpeg;base64,"):
+        value = value[len("data:image/jpeg;base64,") :]
+        expected = "jpeg"
+    elif value.startswith("data:image/png;base64,"):
+        value = value[len("data:image/png;base64,") :]
+        expected = "png"
+    else:
+        raise HTTPException(status_code=422, detail="Expected a PNG or JPEG image data URI.")
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Invalid image encoding.") from exc
+    if len(raw) > 450 * 1024:
+        raise HTTPException(status_code=413, detail="Image exceeds the 450 KB limit.")
+    if expected == "jpeg" and not raw.startswith(b"\xff\xd8\xff"):
+        raise HTTPException(status_code=422, detail="Invalid JPEG image.")
+    if expected == "png" and not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise HTTPException(status_code=422, detail="Invalid PNG image.")
+    return [value]
+
+
 def _to_messages(chat_messages) -> list[Message]:
     """Convert Pydantic ChatMessage objects to core Message objects."""
     messages = []
@@ -118,6 +151,7 @@ def _to_messages(chat_messages) -> list[Message]:
             Message(
                 role=role,
                 content=m.content or "",
+                images=_validated_chat_images(m.images),
                 name=m.name,
                 tool_calls=[
                     ToolCall(
@@ -737,12 +771,21 @@ def _run_agent_result(
 
     if isinstance(agent, OrchestratorAgent):
         run_kwargs["max_continuations"] = 0
+        if req.messages and req.messages[-1].images:
+            run_kwargs["input_images"] = _validated_chat_images(
+                req.messages[-1].images
+            )
+    elif req.messages and req.messages[-1].images:
+        raise HTTPException(
+            status_code=422,
+            detail="This agent does not support image messages; use Orchestrator.",
+        )
     if stream_callback is not None and getattr(agent, "supports_live_stream", False):
-        run_kwargs = {
-            "stream_callback": stream_callback,
-            "stream_event_loop": stream_event_loop,
-            "stream_cancel_event": stream_cancel_event,
-        }
+        run_kwargs.update(
+            stream_callback=stream_callback,
+            stream_event_loop=stream_event_loop,
+            stream_cancel_event=stream_cancel_event,
+        )
 
     # The OpenAI-compatible caller sets max_tokens and temperature for this
     # request. Server-side agents must honour them just like direct inference.

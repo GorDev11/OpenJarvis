@@ -27,6 +27,28 @@ from openjarvis.intelligence.model_catalog import resolve_model_id_for_engine
 logger = logging.getLogger(__name__)
 
 
+
+def _openai_messages_with_images(messages: Sequence[Message]) -> list[dict[str, Any]]:
+    """Convert Ollama-style base64 images to OpenAI image_url message parts."""
+    result = messages_to_dicts(messages)
+    for message in result:
+        images = message.pop("images", None)
+        if not images:
+            continue
+        text = message.get("content") or ""
+        parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
+        for b64 in images:
+            mime = "image/png" if b64.startswith("iVBORw0K") else "image/jpeg"
+            parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"},
+                }
+            )
+        message["content"] = parts
+    return result
+
+
 class _OpenAICompatibleEngine(AsyncHTTPEngineMixin, InferenceEngine):
     """Base for engines that serve the OpenAI ``/v1/chat/completions`` API."""
 
@@ -90,7 +112,7 @@ class _OpenAICompatibleEngine(AsyncHTTPEngineMixin, InferenceEngine):
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "model": self._resolve_model_id(model),
-            "messages": messages_to_dicts(messages),
+            "messages": _openai_messages_with_images(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": False,
@@ -189,7 +211,7 @@ class _OpenAICompatibleEngine(AsyncHTTPEngineMixin, InferenceEngine):
     ) -> AsyncIterator[str]:
         payload: Dict[str, Any] = {
             "model": self._resolve_model_id(model),
-            "messages": messages_to_dicts(messages),
+            "messages": _openai_messages_with_images(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
@@ -250,7 +272,7 @@ class _OpenAICompatibleEngine(AsyncHTTPEngineMixin, InferenceEngine):
         **kwargs: Any,
     ) -> AsyncIterator["StreamChunk"]:
         """Yield StreamChunks with content, tool_calls, and finish_reason."""
-        msg_dicts = messages_to_dicts(messages)
+        msg_dicts = _openai_messages_with_images(messages)
         payload: Dict[str, Any] = {
             "model": self._resolve_model_id(model),
             "messages": msg_dicts,

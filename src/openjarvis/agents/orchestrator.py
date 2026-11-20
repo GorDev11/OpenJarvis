@@ -185,6 +185,8 @@ class OrchestratorAgent(ToolUsingAgent):
             sys_prompt = build_system_prompt(tools=self._tools)
 
         messages = self._build_messages(input, context, system_prompt=sys_prompt)
+        if kwargs.get("input_images"):
+            messages[-1].images = list(kwargs["input_images"])
 
         all_tool_results: list[ToolResult] = []
         turns = 0
@@ -584,6 +586,8 @@ class OrchestratorAgent(ToolUsingAgent):
             context,
             system_prompt=self._system_prompt,
         )
+        if kwargs.get("input_images"):
+            messages[-1].images = list(kwargs["input_images"])
 
         # Get OpenAI-format tool definitions
         openai_tools = self._executor.get_openai_tools() if self._tools else []
