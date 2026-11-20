@@ -213,9 +213,15 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
             throw new Error('Backend-ը փոփոխված է տեղում։ Պահպանիր փոփոխությունները՝ մինչև Desktop թարմացնելը։');
           }
           window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'updating' }));
-          await invoke('apply_main_update', { expectedSha: source.latest_sha });
-          // Do not restart the Python backend only to immediately shut down
-          // the Desktop for the signed installer.
+          await invoke('apply_main_update', {
+            expectedSha: source.latest_sha,
+            restartBackend: false,
+          });
+        } else {
+          // Even when the Python checkout is already current, the signed
+          // installer will terminate this Desktop. Reap its owned backend
+          // first so the relaunched binary does not find stale port 18761.
+          await invoke('stop_backend');
         }
         setPhase('installing');
         await release.install({ restartAfterInstall: true });
@@ -236,7 +242,10 @@ export function MainSourceUpdate({ compact = false }: { compact?: boolean }) {
     window.dispatchEvent(new CustomEvent('openjarvis-backend-update', { detail: 'updating' }));
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      await invoke<string>('apply_main_update', { expectedSha: status!.latest_sha });
+      await invoke<string>('apply_main_update', {
+        expectedSha: status!.latest_sha,
+        restartBackend: true,
+      });
       try { localStorage.removeItem(DISMISSED_KEY); } catch { /* private mode */ }
       setStatus(prev => prev ? {
         ...prev, current_sha: prev.latest_sha, branch: 'main', update_available: false,

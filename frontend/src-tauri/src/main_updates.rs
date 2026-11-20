@@ -187,9 +187,14 @@ async fn fast_forward_main(root: &Path, expected_sha: &str) -> Result<(), String
     Ok(())
 }
 
+fn should_restart_backend(restart_requested: bool, update_succeeded: bool) -> bool {
+    restart_requested || !update_succeeded
+}
+
 #[tauri::command]
 pub(crate) async fn apply_main_update(
     expected_sha: String,
+    restart_backend: bool,
     backend: State<'_, SharedBackend>,
     status: State<'_, SharedStatus>,
     update_gate: State<'_, super::SharedSourceUpdateGate>,
@@ -208,6 +213,12 @@ pub(crate) async fn apply_main_update(
         // Still migrate the old branch name to main when necessary.
         let (_, branch, _) = inspect_local_checkout(&root).await?;
         if branch == PRIMARY_BRANCH {
+            if !restart_backend {
+                // A signed Desktop installer is about to replace and relaunch
+                // the executable. Reap the owned backend before the updater
+                // terminates this process so it cannot orphan :18761.
+                backend.lock().await.stop_all().await;
+            }
             return Ok(latest);
         }
     }
@@ -215,15 +226,19 @@ pub(crate) async fn apply_main_update(
     // processes tracked by the desktop, never an arbitrary listener on :8000.
     backend.lock().await.stop_all().await;
     let outcome = fast_forward_main(&root, &latest).await;
-    // Start the normal managed boot again even if Git update failed. Boot
-    // performs uv sync and confirms service readiness before use.
-    start_managed_boot(backend.inner().clone(), status.inner().clone()).await;
+    // A source-only update needs the normal managed boot immediately. A
+    // signed Desktop install keeps the backend stopped until the new binary
+    // relaunches. If Git failed, always restore the backend because the
+    // frontend will cancel the installer and keep this Desktop alive.
+    if should_restart_backend(restart_backend, outcome.is_ok()) {
+        start_managed_boot(backend.inner().clone(), status.inner().clone()).await;
+    }
     outcome.map(|()| latest)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{accepted_origin, parse_main_sha};
+    use super::{accepted_origin, parse_main_sha, should_restart_backend};
 
     #[test]
     fn only_expected_github_origin_is_accepted() {
@@ -242,5 +257,13 @@ mod tests {
         );
         assert!(parse_main_sha(&format!("{sha}\trefs/heads/main-other")).is_err());
         assert!(parse_main_sha("not-a-sha\trefs/heads/main").is_err());
+    }
+
+    #[test]
+    fn signed_install_keeps_backend_stopped_only_after_success() {
+        assert!(!should_restart_backend(false, true));
+        assert!(should_restart_backend(false, false));
+        assert!(should_restart_backend(true, true));
+        assert!(should_restart_backend(true, false));
     }
 }
