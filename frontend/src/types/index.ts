@@ -126,9 +126,11 @@ export interface LiveEnergyMetrics {
 export interface ChatAttachment {
   name: string;
   size: number;
-  // Only a bounded text excerpt is stored with the local conversation.
+  // Text excerpts or a bounded JPEG/PNG data URI (never both).
   text: string;
   truncated: boolean;
+  mime_type?: string | null;
+  data_url?: string | null;
 }
 
 export interface ChatMessage {
