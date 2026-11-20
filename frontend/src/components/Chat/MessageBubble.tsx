@@ -146,6 +146,14 @@ export function MessageBubble({ message, isLive = false }: Props) {
               ))}
             </div>
           )}
+          {message.attachments?.filter((file) => !!file.data_url).map((file, index) => (
+            <img
+              key={file.name + '-image-' + index}
+              src={file.data_url!}
+              alt={file.name}
+              className="mt-2 max-h-60 max-w-full rounded-lg object-contain"
+            />
+          ))}
         </div>
       </div>
     );

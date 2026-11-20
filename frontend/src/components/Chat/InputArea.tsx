@@ -10,6 +10,7 @@ import {
   CHAT_MAX_BYTES_PER_FILE,
   CHAT_MAX_FILES,
   composeChatContent,
+  isChatImage,
   uploadChatAttachments,
 } from '../../lib/chat-attachments';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
@@ -259,6 +260,10 @@ export function InputArea() {
           toast.error(`You can attach up to ${CHAT_MAX_FILES} files.`);
           break;
         }
+        if (isChatImage(file.name) && added.some((other) => isChatImage(other.name))) {
+          toast.error('Attach one image per message.');
+          continue;
+        }
         added.push(file);
       }
       return added;
@@ -284,6 +289,12 @@ export function InputArea() {
       setUploadingFiles(true);
       try {
         attached = await uploadChatAttachments(pendingFiles);
+        if (attached.some((file) => file.data_url) && /colibri/i.test(selectedModel)) {
+          toast.warning(
+            'Image attached. This Colibri checkpoint may be text-only. If visual analysis fails, choose a vision-capable model.',
+            { duration: 10000 },
+          );
+        }
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'File attachment failed.');
         return; // Keep the draft and files for retry.
@@ -314,10 +325,15 @@ export function InputArea() {
 
     // Build API messages before adding assistant placeholder
     const currentMessages = useAppStore.getState().messages;
-    const apiMessages = currentMessages.map((m) => ({
-      role: m.role,
-      content: composeChatContent(m),
-    }));
+    const apiMessages = currentMessages.map((m) => {
+      const images = m.attachments?.filter((file) => !!file.data_url)
+        .map((file) => file.data_url as string) ?? [];
+      return {
+        role: m.role,
+        content: composeChatContent(m),
+        ...(images.length ? { images } : {}),
+      };
+    });
 
     const assistantMsg: ChatMessage = {
       id: generateId(),
@@ -832,7 +848,7 @@ export function InputArea() {
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={streamState.isStreaming || uploadingFiles || modelLoading}
-          title="Attach files (PDF, DOCX, TXT, code)"
+          title="Attach files and pictures (PDF, DOCX, code, PNG, JPEG)"
           aria-label="Attach files"
           className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30"
           style={{ color: 'var(--color-text-secondary)' }}
