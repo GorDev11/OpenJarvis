@@ -60,3 +60,47 @@ def test_chat_upload_rejects_more_than_four_files():
         files=[("files", (f"{i}.txt", b"hello", "text/plain")) for i in range(5)],
     )
     assert response.status_code == 400
+
+
+def test_chat_upload_accepts_png_as_image_data_without_indexing():
+    import base64
+
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20
+    response = client.post(
+        "/v1/connectors/upload/chat-files",
+        files=[("files", ("screenshot.png", png, "image/png"))],
+    )
+    assert response.status_code == 200
+    item = response.json()["files"][0]
+    assert item["mime_type"] == "image/png"
+    assert item["text"] == ""
+    assert item["data_url"] == "data:image/png;base64," + base64.b64encode(png).decode()
+
+
+def test_chat_upload_rejects_invalid_image_bytes():
+    response = client.post(
+        "/v1/connectors/upload/chat-files",
+        files=[("files", ("screenshot.png", b"not a png", "image/png"))],
+    )
+    assert response.status_code == 415
+
+
+def test_chat_upload_rejects_multiple_images():
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20
+    response = client.post(
+        "/v1/connectors/upload/chat-files",
+        files=[
+            ("files", ("a.png", png, "image/png")),
+            ("files", ("b.png", png, "image/png")),
+        ],
+    )
+    assert response.status_code == 400
+
+
+def test_chat_upload_rejects_large_images():
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * (450 * 1024)
+    response = client.post(
+        "/v1/connectors/upload/chat-files",
+        files=[("files", ("large.png", png, "image/png"))],
+    )
+    assert response.status_code == 413

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import io
 import logging
 import uuid
@@ -167,6 +168,8 @@ _CHAT_TEXT_EXTENSIONS = {
     ".php",
 }
 _CHAT_DOCUMENT_EXTENSIONS = {".pdf", ".docx"}
+_CHAT_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+_CHAT_IMAGE_MAX_BYTES = 450 * 1024
 _CHAT_MAX_FILES = 4
 _CHAT_MAX_FILE_BYTES = 5 * 1024 * 1024
 _CHAT_MAX_FILE_CHARS = 7_000
@@ -178,6 +181,8 @@ class ChatAttachment(BaseModel):
     size: int
     text: str
     truncated: bool
+    mime_type: str | None = None
+    data_url: str | None = None
 
 
 class ChatAttachmentsResponse(BaseModel):
@@ -204,12 +209,13 @@ async def parse_chat_attachments(
 
     processed: list[ChatAttachment] = []
     total_chars = 0
+    image_count = 0
 
     for uploaded in files:
         # Never trust client-provided paths or MIME headers.
         name = PurePosixPath((uploaded.filename or "untitled").replace("\\", "/")).name
         ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
-        if ext not in _CHAT_TEXT_EXTENSIONS | _CHAT_DOCUMENT_EXTENSIONS:
+        if ext not in _CHAT_TEXT_EXTENSIONS | _CHAT_DOCUMENT_EXTENSIONS | _CHAT_IMAGE_EXTENSIONS:
             raise HTTPException(
                 status_code=415,
                 detail=f"File type {ext or '(none)'} is not supported in Chat yet.",
@@ -224,6 +230,38 @@ async def parse_chat_attachments(
             )
         if not data:
             raise HTTPException(status_code=422, detail=f"{name} is empty.")
+
+        if ext in _CHAT_IMAGE_EXTENSIONS:
+            image_count += 1
+            if image_count > 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Attach one image per message (vision model limitation).",
+                )
+            if len(data) > _CHAT_IMAGE_MAX_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"{name} is too large after compression (450 KB maximum).",
+                )
+            is_png = ext == ".png" and data.startswith(b"\x89PNG\r\n\x1a\n")
+            is_jpeg = ext in {".jpg", ".jpeg"} and data.startswith(b"\xff\xd8\xff")
+            if not (is_png or is_jpeg):
+                raise HTTPException(
+                    status_code=415,
+                    detail=f"{name} is not a valid PNG or JPEG file.",
+                )
+            mime = "image/png" if is_png else "image/jpeg"
+            processed.append(
+                ChatAttachment(
+                    name=name,
+                    size=len(data),
+                    text="",
+                    truncated=False,
+                    mime_type=mime,
+                    data_url=f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}",
+                )
+            )
+            continue
 
         try:
             if ext == ".pdf":
