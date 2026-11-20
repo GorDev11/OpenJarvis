@@ -197,6 +197,20 @@ def test_fresh_factual_question_uses_compact_stock_identity():
     assert "tools" not in engine.generate.call_args.kwargs
 
 
+def test_short_lowercase_topic_omits_tool_schemas():
+    engine = _make_engine_no_tools("A watchdog monitors a system for hangs.")
+    tools = [_CalculatorStub(), _StaticToolStub("shell_exec")]
+    agent = OrchestratorAgent(engine, "test-model", tools=tools)
+
+    result = agent.run("watch dogs ?")
+
+    assert result.content == "A watchdog monitors a system for hangs."
+    assert "tools" not in engine.generate.call_args.kwargs
+    messages = engine.generate.call_args.args[0]
+    assert "at most 80 words" in messages[0].text
+    assert len(agent._tools) == 2
+
+
 def test_factual_question_never_shortens_custom_or_persona_system_prompt():
     custom = "You are a custom assistant. Always answer using exact terminology."
     engine = _make_engine_no_tools()

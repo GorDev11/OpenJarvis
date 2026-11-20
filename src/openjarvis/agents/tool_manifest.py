@@ -59,11 +59,11 @@ _FACTUAL_PREFIX = re.compile(
     r"(?:ի՞նչ|ինչ)\s+է\s+|բացատրիր\s+|ինչպես\s+է\s+աշխատում\s+)",
     re.IGNORECASE,
 )
-# Conservative shorthand for device/protocol names, e.g. "esp 32 ?" / "MQTT?".
+# Conservative shorthand for short topic questions, e.g. "esp 32 ?",
+# "MQTT?" or "watch dogs ?". Fresh/personal/action requests are rejected by
+# the guards in ``_is_standalone_knowledge_question`` before this is checked.
 _SHORT_FACTUAL_TOPIC = re.compile(
-    r"^(?:[a-z]{2,12}\s*\d{1,5}|[A-Z][A-Z0-9+#-]{1,14}|"
-    r"python|javascript|typescript|linux|docker|esp32|mqtt|arduino|zigbee|"
-    r"bluetooth)\s*\?$",
+    r"^(?:[^\W_][\w+#-]{0,23})(?:\s+[^\W_][\w+#-]{0,23}){0,3}\s*[?՞]$",
     re.IGNORECASE,
 )
 _LIVE_OR_PERSONAL_DATA = re.compile(

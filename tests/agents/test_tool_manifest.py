@@ -120,6 +120,10 @@ def _tools() -> list[dict]:
         "esp 32 ?",
         "ESP32?",
         "MQTT?",
+        "watch dogs ?",
+        "black holes?",
+        "квантовая физика?",
+        "արհեստական բանականություն՞",
         "What is ESP32?",
         "Tell me about ESP32",
         "Explain MQTT",
@@ -157,6 +161,7 @@ def test_standalone_knowledge_skips_tool_schema_prefill(question: str):
         "esp 32 ? please search online",
         "Create file?",
         "Send money?",
+        "watch my files?",
     ],
 )
 def test_dynamic_personal_or_action_requests_keep_full_manifest(question: str):
