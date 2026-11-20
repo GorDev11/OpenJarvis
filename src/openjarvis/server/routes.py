@@ -151,7 +151,7 @@ def _to_messages(chat_messages) -> list[Message]:
             Message(
                 role=role,
                 content=m.content or "",
-                images=_validated_chat_images(m.images),
+                images=_validated_chat_images(getattr(m, "images", None)),
                 name=m.name,
                 tool_calls=[
                     ToolCall(
