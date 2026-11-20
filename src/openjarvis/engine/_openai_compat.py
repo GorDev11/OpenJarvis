@@ -27,7 +27,6 @@ from openjarvis.intelligence.model_catalog import resolve_model_id_for_engine
 logger = logging.getLogger(__name__)
 
 
-
 def _openai_messages_with_images(messages: Sequence[Message]) -> list[dict[str, Any]]:
     """Convert Ollama-style base64 images to OpenAI image_url message parts."""
     result = messages_to_dicts(messages)

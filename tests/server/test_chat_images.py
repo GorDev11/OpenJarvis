@@ -29,8 +29,7 @@ def test_compat_engine_emits_openai_image_url():
     )
     assert messages[0]["content"][0] == {"type": "text", "text": "Describe image"}
     assert (
-        messages[0]["content"][1]["image_url"]["url"]
-        == "data:image/jpeg;base64," + b64
+        messages[0]["content"][1]["image_url"]["url"] == "data:image/jpeg;base64," + b64
     )
     assert "images" not in messages[0]
 

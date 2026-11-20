@@ -111,7 +111,6 @@ async def cancel_chat_completion(request_id: str, request: Request):
     return {"status": registry.cancel(request_id)}
 
 
-
 def _validated_chat_images(images: list[str] | None) -> list[str] | None:
     """Validate bounded PNG/JPEG data URIs; pass only base64 to the model."""
     if not images:
@@ -776,9 +775,7 @@ def _run_agent_result(
     if isinstance(agent, OrchestratorAgent):
         run_kwargs["max_continuations"] = 0
         if req.messages and req.messages[-1].images:
-            run_kwargs["input_images"] = _validated_chat_images(
-                req.messages[-1].images
-            )
+            run_kwargs["input_images"] = _validated_chat_images(req.messages[-1].images)
     elif req.messages and req.messages[-1].images:
         raise HTTPException(
             status_code=422,
