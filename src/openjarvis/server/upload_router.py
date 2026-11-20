@@ -215,7 +215,9 @@ async def parse_chat_attachments(
         # Never trust client-provided paths or MIME headers.
         name = PurePosixPath((uploaded.filename or "untitled").replace("\\", "/")).name
         ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
-        if ext not in _CHAT_TEXT_EXTENSIONS | _CHAT_DOCUMENT_EXTENSIONS | _CHAT_IMAGE_EXTENSIONS:
+        if ext not in (
+            _CHAT_TEXT_EXTENSIONS | _CHAT_DOCUMENT_EXTENSIONS | _CHAT_IMAGE_EXTENSIONS
+        ):
             raise HTTPException(
                 status_code=415,
                 detail=f"File type {ext or '(none)'} is not supported in Chat yet.",

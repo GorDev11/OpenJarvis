@@ -117,7 +117,9 @@ def _validated_chat_images(images: list[str] | None) -> list[str] | None:
     if not images:
         return None
     if len(images) > 1:
-        raise HTTPException(status_code=422, detail="One image per chat message is supported.")
+        raise HTTPException(
+            status_code=422, detail="One image per chat message is supported."
+        )
     value = images[0]
     if not isinstance(value, str) or len(value) > 620_000:
         raise HTTPException(status_code=413, detail="Image payload is too large.")
@@ -128,7 +130,9 @@ def _validated_chat_images(images: list[str] | None) -> list[str] | None:
         value = value[len("data:image/png;base64,") :]
         expected = "png"
     else:
-        raise HTTPException(status_code=422, detail="Expected a PNG or JPEG image data URI.")
+        raise HTTPException(
+            status_code=422, detail="Expected a PNG or JPEG image data URI."
+        )
     try:
         raw = base64.b64decode(value, validate=True)
     except (binascii.Error, ValueError) as exc:
